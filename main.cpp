@@ -93,6 +93,7 @@ size_t get_thread_number()
 }
 
 
+#if !CONFIG_N_WAY_FLAT
 #if !CONFIG_N_WAY_MERGE_N
 uint32_t  get_nway_merge_n(uint64_t cn)
 {
@@ -102,6 +103,12 @@ uint32_t  get_nway_merge_n(uint64_t cn)
 uint32_t get_nway_merge_n(uint64_t)
 {
         return (uint32_t)CONFIG_N_WAY_MERGE_N;
+}
+#endif
+#else
+uint32_t get_nway_merge_n(uint64_t cn)
+{
+        return (uint32_t)cn;
 }
 #endif
 

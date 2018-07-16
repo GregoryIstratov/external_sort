@@ -21,8 +21,7 @@ public:
                   active_tasks_(0),
                   active_threads_(0),
                   mem_avail_(mem_avail),
-                  bar0_(threads_n),
-                  bar1_(threads_n),
+                  bar_wrk_enter_(threads_n),
                   io_ratio_(io_ratio),
                   output_filename_(output_filename)
         {
@@ -37,7 +36,13 @@ public:
                 for (uint32_t i = 1; i < threads_n_; ++i)
                 {
                         threads.emplace_back(&pipeline::worker, this, i, worker_mem);
+
+#if CONFIG_N_WAY_FLAT
+                        seq_mtx_.enque(i);
+#endif
                 }
+
+                seq_mtx_.enque(0);
 
                 worker(0, worker_mem);
 
@@ -49,25 +54,48 @@ private:
         {
                 std::unique_lock<std::mutex> lock(mtx_, std::defer_lock);
                 perf_timer tm_;
+                size_t tmem = 0;
 
-                info2() << "worker enter";
-
-                active_threads_++;
-
-                size_t tmem = start_mem;
-                mem_avail_ -= tmem;
-
-                bar0_.wait();
+                worker_enter(id, start_mem, tmem);
 
                 sorting_stage();
 
-                /* sync before building queue */
-                bar1_.wait();
+#if CONFIG_N_WAY_FLAT
+                {
+                        seq_mtx_.lock(id, cmd_mod::skip_enque);
+
+                        std::unique_lock<sequential_mutex> flat_lock(seq_mtx_,
+                                                                     std::adopt_lock);
+
+                        if(id > 0)
+                        {
+                                worker_exit(id, tmem);
+                                return;;
+                        }
+                }
+#endif
 
                 build_merge_queue();
 
                 merging_stage(id, tmem, lock);
 
+                worker_exit(id, tmem);
+        }
+
+        void worker_enter(uint32_t id, size_t start_mem, size_t& tmem)
+        {
+                info2() << "worker enter";
+
+                active_threads_++;
+
+                tmem = start_mem;
+                mem_avail_ -= tmem;
+
+                bar_wrk_enter_.wait();
+        }
+
+        void worker_exit(uint32_t id, size_t tmem)
+        {
                 mem_avail_ += tmem;
 
                 active_threads_--;
@@ -79,7 +107,16 @@ private:
 
         void sorting_stage()
         {
+                static std::once_flag tm_start_flag, tm_end_flag;
+                static perf_timer tm;
+                static barrier bar(threads_n_);
+
+                perf_timer ltm;
+
                 debug() << "worker sort";
+
+                std::call_once(tm_start_flag, [](perf_timer& t){ t.start(); }, tm);
+                ltm.start();
 
                 auto task = split_next();
                 while (!task.empty())
@@ -90,6 +127,21 @@ private:
 
                         task = split_next();
                 }
+
+                ltm.end();
+
+                // sync threads before time measurement
+                bar.wait();
+
+                std::call_once(tm_end_flag, [](perf_timer& t) {
+                        t.end();
+                        info() << "Sorting stage is done for "
+                               << t.elapsed<perf_timer::ms>() << " ms";
+                }, tm);
+
+                info2() << "Thread sorting stage is done for "
+                           << ltm.elapsed<perf_timer::ms>() << " ms";
+
         }
 
         void merging_stage(uint32_t id, size_t& tmem, std::unique_lock<std::mutex>& lock)
@@ -116,10 +168,6 @@ private:
                         if(!sync_on_lvl(lock))
                                 continue;
 
-                        debug() << "Getting new merge task [tmem="
-                                 << size_format(tmem) << ", ior="
-                                 <<io_ratio_<<", qsz="<<qsz<<"]";
-
                         auto task = std::move(queue_.front());
                         queue_.pop_front();
 
@@ -134,7 +182,7 @@ private:
                         debug() << "Got new merge task [tmem="
                                  <<size_format(tmem)
                                  <<", imem=" <<size_format(imem)
-                                 << ", omem=" << size_format(omem);
+                                 << ", omem=" << size_format(omem) << "]";
 
                         ++active_tasks_;
 
@@ -235,9 +283,9 @@ private:
         }
 private:
         raw_file_reader fr_;
-        size_t max_chunk_size_;
-        size_t n_way_merge_;
-        uint32_t threads_n_;
+        const size_t max_chunk_size_;
+        const size_t n_way_merge_;
+        const uint32_t threads_n_;
 
         std::list<chunk_id> l0_ids_;
 
@@ -250,12 +298,13 @@ private:
         std::atomic<size_t>  mem_avail_;
 
 
-        barrier bar0_, bar1_;
+        barrier bar_wrk_enter_;
 
         const float io_ratio_;
 
         std::mutex mtx_;
         std::condition_variable sync_cv_;
+        sequential_mutex seq_mtx_;
 
         std::string output_filename_;
 };

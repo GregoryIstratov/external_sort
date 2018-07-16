@@ -17,15 +17,21 @@ static constexpr const char* CONFIG_INPUT_FILENAME  = "input";
 static constexpr const char* CONFIG_OUTPUT_FILENAME = "output";
 static constexpr const char* CONFIG_SCHUNK_FILENAME_PAT = "c";
 
+#define CONFIG_FORCE_DEBUG 1
+
+#define CONFIG_N_WAY_FLAT 0
+
+#if !CONFIG_N_WAY_FLAT
 /* 0 - auto, n > 2 = n */
 #define CONFIG_N_WAY_MERGE_N 0
 
 #if CONFIG_N_WAY_MERGE_N == 0
 static constexpr int CONFIG_TREE_HEIGH = 2;
 #endif
+#endif
 
 /* -5 MiB for program itself and some part of each thread stack*/
-static constexpr size_t CONFIG_MEM_AVAIL = 128 * MEGABYTE;
+static constexpr size_t CONFIG_MEM_AVAIL = 16 * MEGABYTE;
 
 static constexpr float CONFIG_IO_BUFF_RATIO = 0.5f;
 
