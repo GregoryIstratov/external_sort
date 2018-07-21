@@ -3,8 +3,7 @@
 #include <memory>
 #include <list>
 
-#include "chunk_id.hpp"
-#include "file_io.hpp"
+#include "chunk.hpp"
 #include "util.hpp"
 #include "task.hpp"
 
@@ -123,9 +122,7 @@ private:
 
                         for(auto& node : childs)
                         {
-                                std::string name = make_filename(node->task->id());
-
-                                chunks.emplace_back(std::move(name));
+                                chunks.emplace_back(node->task->id());
 
                                 node->parent = new_node;
                         }
@@ -157,9 +154,7 @@ private:
 
                 for(const chunk_id& id : ids)
                 {
-                        std::string name = make_filename(id);
-
-                        chunks.emplace_back(std::move(name));
+                        chunks.emplace_back(id);
                 }
 
                 std::string name = make_filename(output_id);

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <algorithm>
-#include "chunk_id.hpp"
-#include "file_io.hpp"
+#include <map>
+#include "chunk.hpp"
 #include "util.hpp"
 
 template<typename T>
@@ -12,8 +12,9 @@ public:
         chunk_sort_task() = default;
 
         explicit
-        chunk_sort_task(std::vector<T>&& data, chunk_id id)
-                : data_(std::move(data)), id_(id)
+        chunk_sort_task(std::vector<T>&& data, chunk_id id,
+                        chunk_header_map_sptr<T> hmap)
+                : data_(std::move(data)), id_(id), hmap_(hmap)
         {}
 
         chunk_sort_task(chunk_sort_task&&) noexcept = default;
@@ -27,6 +28,11 @@ public:
 
                 sort();
 
+                chunk_header<T> header;
+                header.min = data_.front();
+                header.max = data_.back();
+                hmap_->set(id_, header);
+
                 tm_.end();
 
                 info2() << "sorted " << make_filename(id_)
@@ -38,6 +44,7 @@ public:
         void release()
         {
                 data_ = std::vector<T>();
+                hmap_.reset();
         }
 
         bool empty() { return data_.empty(); }
@@ -79,6 +86,7 @@ private:
 private:
         std::vector<T> data_;
         chunk_id id_;
+        chunk_header_map_sptr<T> hmap_;
 };
 
 template<typename T>
@@ -99,30 +107,40 @@ public:
         chunk_merge_task(chunk_merge_task&&) = default;
         chunk_merge_task& operator=(chunk_merge_task&&) = default;
 
-        void execute(size_t in_buff_size, size_t out_buff_size)
+        void execute(size_t in_buff_size, size_t out_buff_size, chunk_header_map_sptr<T> hmap)
         {
+                hmap_ = hmap; //TODO tmp, make it from constructor
+
                 perf_timer tm_;
                 tm_.start();
 
-                make_remove_queue();
+                if(IS_ENABLED(CONFIG_REMOVE_TMP_FILES))
+                        make_remove_queue();
 
                 size_t ick_mem = round_down(in_buff_size/input.size(), sizeof(T));
                 size_t ock_mem = round_down(out_buff_size, sizeof(T));
+
+                if(!ick_mem || !ock_mem)
+                        throw_exception("No memory for buffers [ick_mem="
+                                                              << ick_mem
+                                                              << " ock_mem="
+                                                              << ock_mem
+                                                              << "]");
 
                 for(auto& is : input)
                         is.open(ick_mem);
 
                 output.open(ock_mem);
 
-#if CONFIG_INFO_LEVEL >= 2
-                ss_ << "Merged { ";
-                for (const auto& k : input)
-                        ss_ << k.filename() << " (" << size_format(k.buff_size())
-                            << "/" << size_format(k.size())
-                            << "/" << num_format(k.count()) << ") ";
-#endif
-
-
+                if(CONFIG_INFO_LEVEL >= 2)
+                {
+                        ss_ << "Merged { ";
+                        for(const auto& k : input)
+                                ss_ << k.filename() << " ("
+                                    << size_format(k.buff_size())
+                                    << "/" << size_format(k.size())
+                                    << "/" << num_format(k.count()) << ") ";
+                }
 
                 if (input.size() == 2)
                         two_way_merge();
@@ -131,15 +149,21 @@ public:
 
                 output.close();
 
-                remove_tmp_files();
+                if(IS_ENABLED(CONFIG_REMOVE_TMP_FILES))
+                        remove_tmp_files();
 
-#if CONFIG_INFO_LEVEL >= 2
-                tm_.end();
+                chunk_header<T> header = chunk_istream<T>::read_header(id());
+                hmap_->set(id(), header);
 
-                ss_ << " } -> { " << make_filename(id()) << " ("
-                    << size_format(output.buff_size()) << ")"
-                    << " } for " << tm_.elapsed<perf_timer::ms>() << " ms";
-#endif
+                if(CONFIG_INFO_LEVEL >= 2)
+                {
+                        tm_.end();
+
+                        ss_ << " } -> { " << make_filename(id()) << " ("
+                            << size_format(output.buff_size()) << ")"
+                            << " } for " << tm_.elapsed<perf_timer::ms>() << " ms";
+                }
+
         }
 
         std::string debug_str() const { return ss_.str(); }
@@ -159,7 +183,6 @@ public:
 
 private:
 
-#if CONFIG_REMOVE_TMP_FILES
         void make_remove_queue()
         {
                 for(auto& is : input)
@@ -178,10 +201,6 @@ private:
                         }
                 }
         }
-#else
-        void make_remove_queue() {}
-        void remove_tmp_files() {}
-#endif
 
         void copy_to_output(chunk_istream<T>& is)
         {
@@ -263,7 +282,7 @@ private:
 
         std::stringstream ss_;
 
-#if CONFIG_REMOVE_TMP_FILES
         std::vector<std::string> remove_que_;
-#endif
+
+        chunk_header_map_sptr<T> hmap_;
 };

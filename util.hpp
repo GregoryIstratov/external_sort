@@ -1,5 +1,4 @@
-#ifndef EXTERNAL_SORT_UTIL_HPP
-#define EXTERNAL_SORT_UTIL_HPP
+#pragma once
 
 #include <chrono>
 #include <iostream>
@@ -11,8 +10,36 @@
 #include <condition_variable>
 #include <list>
 #include <cassert>
+#include <functional>
+#include <fstream>
+#include <vector>
+#include <random>
+#include <algorithm>
 
 #include "settings.hpp"
+#include "log.hpp"
+
+class __myexception : public std::exception {
+public:
+        __myexception(const char* msg, const char* file, const char* fun, int line)
+        {
+                std::stringstream ss;
+                ss << "THR[" << get_thread_id_str() << "]" << "[" << fun << "]: " << msg << " - " << file << ":" << line;
+
+                str_ = ss.str();
+        }
+
+        const char* what() const noexcept override
+        { return str_.c_str(); }
+private:
+        std::string str_;
+};
+
+#define throw_exception(msg) do { \
+        std::stringstream ss; (ss << msg); \
+        throw __myexception(ss.str().c_str(), \
+                            __FILE__, __FUNCTION__, __LINE__); \
+} while(0)
 
 class spinlock {
 public:
@@ -97,7 +124,7 @@ public:
                 --n_;
 
                 if (n_ < 0)
-                        throw std::runtime_error("error in barrier thread sync");
+                        throw_exception("error in barrier thread sync");
 
                 if (n_ == 0)
                 {
@@ -126,6 +153,21 @@ public:
         using ms = std::chrono::milliseconds;
         using ns = std::chrono::nanoseconds;
 
+        perf_timer() = default;
+
+        perf_timer(const char* msg, std::function<void(void)>&& fn)
+        {
+                start();
+
+                fn();
+
+                end();
+
+                info2() << msg << ": "
+                               << std::chrono::duration_cast<std::chrono::milliseconds>(end_ - start_).count() << " ms";
+        }
+
+
         void start()
         {
                 start_ = std::chrono::high_resolution_clock::now();
@@ -145,130 +187,6 @@ public:
 private:
         std::chrono::high_resolution_clock::time_point start_, end_;
 };
-
-class logger
-{
-public:
-        ~logger()
-        {
-                os_ << std::endl;
-        }
-
-        logger(logger&&) = delete;
-        logger(const logger&) = delete;
-
-        logger& operator=(logger&&) = delete;
-        logger& operator=(const logger&) = delete;
-
-protected:
-        logger(const char* type, std::ostream& os = std::cout)
-                : lock_(mtx_), os_(os), fmt_guard_(os_)
-        {
-                static const auto flags = std::ios_base::hex
-                                          | std::ios_base::uppercase
-                                          | std::ios_base::showbase;
-
-                os_ << "[+"
-                    << std::fixed << std::setprecision(3)
-                    << (clock() / (float)CLOCKS_PER_SEC) << "]"
-                    << "[" << type << "]["
-                    << std::resetiosflags(std::ios_base::dec)
-                    << std::setiosflags(flags)
-                    << std::this_thread::get_id() << "]: "
-                    << std::resetiosflags(flags)
-                    << std::setiosflags(std::ios::dec)
-                                                     ;
-        }
-
-        class fmt_guard
-        {
-        public:
-                explicit
-                fmt_guard(std::ios& _ios) : ios_(_ios), init_(nullptr)
-                {
-                        init_.copyfmt(ios_);
-                }
-
-                ~fmt_guard()
-                {
-                        ios_.copyfmt(init_);
-                }
-
-        private:
-                std::ios& ios_;
-                std::ios init_;
-        };
-
-protected:
-        static std::mutex mtx_;
-
-        std::unique_lock<std::mutex> lock_;
-        std::ostream& os_;
-        fmt_guard fmt_guard_;
-private:
-        template<typename T>
-        friend logger&& operator<<(logger&& _log, T&& v);
-};
-
-template<typename T>
-logger&& operator<<(logger&& _log, T&& v)
-{
-        _log.os_ << v;
-        return std::move(_log);
-}
-
-class info : public logger
-{
-public:
-        info() : logger("INF") {}
-};
-
-class error : public logger
-{
-public:
-        error() : logger("ERR", std::cerr) {}
-};
-
-#if CONFIG_INFO_LEVEL >= 2
-
-class info2 : public logger
-{
-public:
-        info2() : logger("INF") {}
-};
-
-#else
-struct info2
-{
-};
-
-template<typename T>
-info2&& operator<<(info2&& _log, const T &v)
-{
-        return std::move(_log);
-}
-#endif
-
-#if !defined(NDEBUG) || CONFIG_FORCE_DEBUG
-class debug : public logger
-{
-public:
-        debug() : logger("DBG") {}
-};
-#else
-
-struct debug
-{
-};
-
-template<typename T>
-debug&& operator<<(debug&& _log, const T &v)
-{
-        return std::move(_log);
-}
-
-#endif
-
 
 inline
 std::string size_format(uint64_t bytes)
@@ -302,8 +220,6 @@ std::string num_format(uint64_t n)
         return ss.str();
 }
 
-void gen_rnd_test_file(const char* filename, uint64_t size);
-
 template<typename T>
 inline T div_up(T a, T b)
 {
@@ -328,4 +244,123 @@ inline T round_down(T i, T mod)
         return div_up(i - mod + 1, mod) * mod;
 }
 
-#endif //EXTERNAL_SORT_UTIL_HPP
+void file_write(const char* filename, const void* data, size_t size);
+
+void gen_rnd_test_file(const char* filename, uint64_t size);
+
+template<typename T>
+void make_rnd_file_from(std::vector<T>& arr, const char* filename)
+{
+        std::random_device rd;
+        std::mt19937 g(rd());
+
+        std::shuffle(arr.begin(), arr.end(), g);
+
+        file_write(filename, arr.data(), arr.size() * sizeof(T));
+}
+
+class raw_file_reader
+{
+public:
+        explicit
+        raw_file_reader(const std::string& filename)
+                : filename_(filename)
+        {
+                is_.open(filename_, std::ios::in | std::ios::binary);
+
+                if(!is_)
+                        throw_exception("Cannot open the file '"
+                                        << filename
+                                        << "': "
+                                        << strerror(errno));
+
+                is_.rdbuf()->pubsetbuf(nullptr, 0);
+
+                is_.seekg(0, std::ios::end);
+                file_size_ = is_.tellg();
+                is_.seekg(0, std::ios::beg);
+        }
+
+        raw_file_reader(const raw_file_reader&) = delete;
+        raw_file_reader& operator=(const raw_file_reader&) = delete;
+
+
+        raw_file_reader(raw_file_reader&& o) = default;
+        raw_file_reader& operator=(raw_file_reader&& o) = default;
+
+        void close()
+        {
+                if(is_)
+                        is_.close();
+
+                is_ = std::ifstream();
+        }
+
+
+        std::streamsize read(char* buff, std::streamsize size)
+        {
+                is_.read(buff, size);
+
+                if(is_.bad() || (is_.bad() && !is_.eof()))
+                        throw_exception("Cannot read the file '"
+                                        << filename_
+                                        << "': "
+                                        << strerror(errno));
+
+                std::streamsize r = is_.gcount();
+                read_ += r;
+
+                return r;
+        }
+
+        bool eof() const { return is_.eof() || read_ >= file_size_; }
+
+        std::string filename() const { return filename_; }
+        uint64_t file_size() const { return file_size_; }
+
+private:
+        std::ifstream is_;
+        std::string filename_;
+        uint64_t file_size_;
+        uint64_t read_ = 0;
+};
+
+/* ====================================================
+ * Config conditional macros.
+ * Taken from the linux kernel sources, Kbuild system.
+ * =====================================================
+ */
+
+#define __ARG_PLACEHOLDER_1 0,
+#define __take_second_arg(__ignored, val, ...) val
+
+/*
+ * The use of "&&" / "||" is limited in certain expressions.
+ * The following enable to calculate "and" / "or" with macro expansion only.
+ */
+#define __and(x, y)			___and(x, y)
+#define ___and(x, y)			____and(__ARG_PLACEHOLDER_##x, y)
+#define ____and(arg1_or_junk, y)	__take_second_arg(arg1_or_junk y, 0)
+
+#define __or(x, y)			___or(x, y)
+#define ___or(x, y)			____or(__ARG_PLACEHOLDER_##x, y)
+#define ____or(arg1_or_junk, y)		__take_second_arg(arg1_or_junk 1, y)
+
+/*
+ * Helper macros to use CONFIG_ options in C/CPP expressions. Note that
+ * these only work with boolean and tristate options.
+ */
+
+/*
+ * Getting something that works in C and CPP for an arg that may or may
+ * not be defined is tricky.  Here, if we have "#define CONFIG_BOOGER 1"
+ * we match on the placeholder define, insert the "0," for arg1 and generate
+ * the triplet (0, 1, 0).  Then the last step cherry picks the 2nd arg (a one).
+ * When CONFIG_BOOGER is not defined, we generate a (... 1, 0) pair, and when
+ * the last step cherry picks the 2nd arg, we get a zero.
+ */
+#define __is_defined(x)			___is_defined(x)
+#define ___is_defined(val)		____is_defined(__ARG_PLACEHOLDER_##val)
+#define ____is_defined(arg1_or_junk)	__take_second_arg(arg1_or_junk 1, 0)
+
+#define IS_ENABLED(option) __is_defined(option)

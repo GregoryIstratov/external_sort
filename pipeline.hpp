@@ -2,7 +2,8 @@
 
 #include <mutex>
 #include <atomic>
-#include "file_io.hpp"
+#include <future>
+#include "chunk.hpp"
 #include "util.hpp"
 #include "task_tree.hpp"
 
@@ -15,7 +16,7 @@ public:
                  size_t mem_avail, float io_ratio,
                  const std::string& output_filename)
                 : fr_(std::move(input_file)),
-                  max_chunk_size_(max_chunk_size),
+                  max_chunk_size_(round_down(max_chunk_size, sizeof(T))),
                   n_way_merge_(n_way_merge),
                   threads_n_(threads_n),
                   active_tasks_(0),
@@ -25,7 +26,7 @@ public:
                   io_ratio_(io_ratio),
                   output_filename_(output_filename)
         {
-
+                hmap_ = std::make_shared<chunk_header_map<T>>();
         }
 
         void run()
@@ -33,21 +34,62 @@ public:
                 size_t worker_mem = mem_avail_ / threads_n_;
 
                 std::vector<std::thread> threads;
+                std::vector<std::future<void>> futures;
                 for (uint32_t i = 1; i < threads_n_; ++i)
                 {
-                        threads.emplace_back(&pipeline::worker, this, i, worker_mem);
+                        std::packaged_task<void()> task([this, i, worker_mem](){
+                                worker(i, worker_mem);
+                        });
 
-#if CONFIG_N_WAY_FLAT
-                        seq_mtx_.enque(i);
-#endif
+                        futures.emplace_back(task.get_future());
+
+                        threads.emplace_back(std::move(task));
+
+                        if(IS_ENABLED(CONFIG_N_WAY_FLAT))
+                                seq_mtx_.enque(i);
                 }
 
                 seq_mtx_.enque(0);
 
-                worker(0, worker_mem);
+                std::packaged_task<void()> task([this, worker_mem](){
+                        worker(0, worker_mem);
+                });
+
+                futures.emplace_back(task.get_future());
+
+                task();
 
                 for (auto& t : threads)
                         t.join();
+
+
+                bool any_failed = false;
+                auto get_thr_res = [&any_failed](std::future<void>& f){
+                        try
+                        {
+                                f.get();
+                        }
+                        catch(const std::exception& e)
+                        {
+                                error() << e.what();
+                                any_failed = true;
+                        }
+                };
+
+
+                for(auto& f : futures)
+                        get_thr_res(f);
+
+                if(any_failed)
+                        throw_exception("Pipeline workers error");
+
+                if(std::rename(make_filename(result_id_).c_str(),
+                               output_filename_.c_str()) != 0)
+                {
+                        throw_exception("Cannot rename '" << make_filename(result_id_)
+                                                 << "' to '" << output_filename_
+                                                 << "': " << strerror(errno));
+                }
         }
 private:
         void worker(uint32_t id, size_t start_mem)
@@ -60,7 +102,7 @@ private:
 
                 sorting_stage();
 
-#if CONFIG_N_WAY_FLAT
+                if(IS_ENABLED(CONFIG_N_WAY_FLAT))
                 {
                         seq_mtx_.lock(id, cmd_mod::skip_enque);
 
@@ -73,7 +115,6 @@ private:
                                 return;;
                         }
                 }
-#endif
 
                 build_merge_queue();
 
@@ -188,7 +229,7 @@ private:
 
                         lock.unlock();
 
-                        task->execute(imem, omem);
+                        task->execute(imem, omem, hmap_);
                         task->release();
 
                         --active_tasks_;
@@ -208,7 +249,7 @@ private:
                         tt.build(l0_ids_, n_way_merge_);
                         queue_ = tt.make_queue();
 
-                        queue_.back()->set_output_filename(output_filename_);
+                        result_id_ = queue_.back()->id();
                 });
         }
 
@@ -266,7 +307,7 @@ private:
                         }
                 }
 
-                return chunk_sort_task<T>(std::move(buff), chunk_id(0, id++));
+                return chunk_sort_task<T>(std::move(buff), chunk_id(0, id++), hmap_);
         }
 
         void save(chunk_sort_task<T>&& task)
@@ -292,11 +333,11 @@ private:
         std::list<std::unique_ptr<chunk_merge_task<T>>> queue_;
         std::once_flag queue_flag_;
         chunk_id::lvl_t last_lvl_ = 1;
+        chunk_id result_id_;
 
         std::atomic_uint32_t active_tasks_;
         std::atomic_uint32_t active_threads_;
         std::atomic<size_t>  mem_avail_;
-
 
         barrier bar_wrk_enter_;
 
@@ -307,4 +348,6 @@ private:
         sequential_mutex seq_mtx_;
 
         std::string output_filename_;
+
+        chunk_header_map_sptr<T> hmap_;
 };

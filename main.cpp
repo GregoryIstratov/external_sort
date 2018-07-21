@@ -70,8 +70,9 @@
 
 #include <cmath>
 #include <type_traits>
+#include <iterator>
 
-#include "file_io.hpp"
+#include "chunk.hpp"
 #include "util.hpp"
 #include "task_tree.hpp"
 #include "task.hpp"
@@ -92,56 +93,90 @@ size_t get_thread_number()
         return n != 0 ? n : CONFIG_DEFAULT_THREAD_NUMBER;
 }
 
-
-#if !CONFIG_N_WAY_FLAT
-#if !CONFIG_N_WAY_MERGE_N
-uint32_t  get_nway_merge_n(uint64_t cn)
-{
-        return (uint32_t)std::round(solve_merge_n_eq2(cn, CONFIG_TREE_HEIGH));
-}
-#else
-uint32_t get_nway_merge_n(uint64_t)
-{
-        return (uint32_t)CONFIG_N_WAY_MERGE_N;
-}
-#endif
-#else
 uint32_t get_nway_merge_n(uint64_t cn)
 {
-        return (uint32_t)cn;
-}
-#endif
+        if(IS_ENABLED(CONFIG_N_WAY_FLAT))
+                return (uint32_t)cn;
 
-#if CONFIG_CHECK_RESULT
+        if(IS_ENABLED(CONFIG_N_WAY_MERGE_N))
+                return (uint32_t)CONFIG_N_WAY_MERGE_N;
+
+        return (uint32_t)std::round(solve_merge_n_eq2(cn, CONFIG_TREE_HEIGH));
+}
+
 void check_result(uint64_t isz)
 {
         chunk_istream<CONFIG_DATA_TYPE> res_is(CONFIG_OUTPUT_FILENAME);
         res_is.open(CONFIG_MEM_AVAIL);
-        if(isz == res_is.size())
-                info2() << "Input filesize " << isz << "==" <<res_is.size()<<" output filesize";
+
+        uint64_t sz = res_is.size();
+        if(isz == sz)
+                info2() << "Input filesize " << isz << "==" <<sz<<" output filesize";
         else
-                info2() << "Input filesize " << isz << "!=" <<res_is.size()<<" output filesize";
+                error() << "Input filesize " << isz << "!=" <<sz<<" output filesize";
 
         info() << "Checking is file sorted...";
+
         chunk_istream_iterator<CONFIG_DATA_TYPE> beg(res_is), end;
         if(std::is_sorted(beg, end))
                 info() << "File is sorted";
         else
-                info() << "File is NOT sorted";
+                error() << "File is NOT sorted";
 }
-#else
-void check_result(uint64_t isz) {}
-#endif
+
+void print_result()
+{
+        chunk_istream<CONFIG_DATA_TYPE> is(CONFIG_OUTPUT_FILENAME);
+        is.open(CONFIG_MEM_AVAIL);
+
+        chunk_istream_iterator<CONFIG_DATA_TYPE> beg(is), end;
+
+        std::cout << "Result [";
+        std::copy(beg, end, std::ostream_iterator<CONFIG_DATA_TYPE>(std::cout, " "));
+        std::cout << "]" << std::endl;
+}
+
+void make_test_file()
+{
+        switch(CONFIG_TEST_FILE_TYPE)
+        {
+                case CONFIG_TEST_FILE_SHUFFLE:
+                {
+                        std::vector<CONFIG_DATA_TYPE> arr(CONFIG_TEST_FILE_SIZE
+                                                          / sizeof(CONFIG_DATA_TYPE));
+
+                        CONFIG_DATA_TYPE i = CONFIG_DATA_TYPE();
+
+                        for(auto& v : arr)
+                                v = i++;
+
+                        make_rnd_file_from(arr, CONFIG_INPUT_FILENAME);
+                        break;
+                }
+
+                case CONFIG_TEST_FILE_RANDOM:
+                {
+                        gen_rnd_test_file(CONFIG_INPUT_FILENAME,
+                                          CONFIG_TEST_FILE_SIZE);
+                        break;
+                }
+
+                default:
+                        throw_exception("Unknown test file type");
+        }
+}
 
 int main()
 try
 {
-        //gen_rnd_test_file(CONFIG_INPUT_FILENAME, 500 * MEGABYTE);
+        if(IS_ENABLED(CONFIG_GENERATE_TEST_FILE))
+                perf_timer("Test file generating", &make_test_file);
+
         using data_t = CONFIG_DATA_TYPE;
 
         raw_file_reader rfr_(CONFIG_INPUT_FILENAME);
 
-        size_t threads_n = get_thread_number();
+        size_t threads_n = 6;//get_thread_number();
 
         uint64_t isz  = rfr_.file_size();
         uint64_t ncpu = threads_n;
@@ -188,22 +223,22 @@ try
                             chunk_size, n_way_merge, threads_n, ram, ior,
                             CONFIG_OUTPUT_FILENAME);
 
-        perf_timer tm;
-
-        tm.start();
-
-        pl.run();
-
-        tm.end();
-
-        info() << "Finished for " << tm.elapsed<perf_timer::ms>() << " ms";
+        perf_timer("Finished for", [&pl](){
+                pl.run();
+        });
 
 
-        check_result(isz);
+        if(IS_ENABLED(CONFIG_CHECK_RESULT))
+                check_result(isz);
 
-        return 0;
+        if(IS_ENABLED(CONFIG_PRINT_RESULT))
+                print_result();
+
+        return EXIT_SUCCESS;
 }
 catch (const std::exception& e)
 {
-        std::cerr << "ERROR: " << e.what() << std::endl;
+        error() << e.what();
+
+        return EXIT_FAILURE;
 }
