@@ -1,11 +1,11 @@
 /* =====================================================
  *                    EXTERNAL SORT
  * =====================================================
- * This program is for sorting ANY amount of data
- * on machines with very low amount of RAM on board.
- * Like a machine with 128 MiB RAM and enough disk space
- * on board can sort 1TB ( or more ) file of 32-bit integers.
- *
+ * This program is for sorting very large amount of data
+ * that cannot fit into machine's RAM by splitting input
+ * file into small pieces that fit into main memory
+ * sorting and merging them into one file.
+ * 
  * =====================================================
  *                FORMULAS OF COMPUTATION
  * =====================================================
@@ -14,7 +14,7 @@
  * ISZ  - input file size > RAM.
  * NCPU - Number of CPU threads ( auto or 2 default )
  * TRAM - Ram per thread - RAM / NCPU
- * MLVL - Max level = 5
+ * MLVL - Max level = 2
  * CS0  - L0 Chunk Size   = TRAM
  * CN   - L0 Chunk Number = ISZ / CS0
  * NMRG - N-Way merge, solution for log(CN)/log(x) = MLVL = CN^(1/MLVL)
@@ -40,7 +40,7 @@
  *                  Synchronize threads
  * =====================================================
  *                      STAGE 2
- *
+ *                    NO FLAT MODE
  *        Merge sorted N chunks -> 1, save it
  *        go to the next level and repeat
  * =====================================================
@@ -62,9 +62,25 @@
  *                \ ____________ /
  *                      \ /
  *                     RESULT
+  * =====================================================
+ *                      STAGE 2
+ *                     FLAT MODE
+ *           Merge sorted ALL chunks -> 1
+ * =====================================================
+ *
+ *   С1    С2    С3    С4   С5    С6    С7    С8   Cn
+ *    |    |     |     |    |     |     |     |     |
+ *    -----------------------------------------------
+ *    |        N-WAY MERGE WITH PRIORITY QUEUE      |
+ *    -----------------------------------------------
+ *    |    |     |     |    |     |     |     |     |
+ *    |    |     |     |    |     |     |     |     |
+ *    _______________________________________________
+ *    |                   RESULT                    |
+ *    _______________________________________________
  *
  * =====================================================
- *                   Save result
+ *                    Save result
  * =====================================================
  */
 
@@ -176,7 +192,7 @@ try
 
         raw_file_reader rfr_(CONFIG_INPUT_FILENAME);
 
-        size_t threads_n = 6;//get_thread_number();
+        size_t threads_n = get_thread_number();
 
         uint64_t isz  = rfr_.file_size();
         uint64_t ncpu = threads_n;
@@ -219,12 +235,12 @@ try
         info() << "L0 Chunk Size: " << size_format(cs0);
         info() << "L0 Chunk Count: " << num_format(cn);
 
-        pipeline<data_t> pl(std::move(rfr_),
-                            chunk_size, n_way_merge, threads_n, ram, ior,
-                            CONFIG_OUTPUT_FILENAME);
+        processor<data_t> pcr(std::move(rfr_),
+                              chunk_size, n_way_merge, threads_n, ram, ior,
+                              CONFIG_OUTPUT_FILENAME);
 
-        perf_timer("Finished for", [&pl](){
-                pl.run();
+        perf_timer("Finished for", [&pcr](){
+                pcr.run();
         });
 
 

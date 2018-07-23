@@ -12,9 +12,8 @@ public:
         chunk_sort_task() = default;
 
         explicit
-        chunk_sort_task(std::vector<T>&& data, chunk_id id,
-                        chunk_header_map_sptr<T> hmap)
-                : data_(std::move(data)), id_(id), hmap_(hmap)
+        chunk_sort_task(std::vector<T>&& data, chunk_id id)
+                : data_(std::move(data)), id_(id)
         {}
 
         chunk_sort_task(chunk_sort_task&&) noexcept = default;
@@ -28,11 +27,6 @@ public:
 
                 sort();
 
-                chunk_header<T> header;
-                header.min = data_.front();
-                header.max = data_.back();
-                hmap_->set(id_, header);
-
                 tm_.end();
 
                 info2() << "sorted " << make_filename(id_)
@@ -44,13 +38,12 @@ public:
         void release()
         {
                 data_ = std::vector<T>();
-                hmap_.reset();
         }
 
         bool empty() { return data_.empty(); }
 
         chunk_id id() const { return id_; }
-        const auto& data() const { return data_; }
+        const auto* data() const { return &data_[0]; }
         size_t size() const { return data_.size() * sizeof(T); }
         size_t count() const { return data_.size(); }
 
@@ -86,7 +79,6 @@ private:
 private:
         std::vector<T> data_;
         chunk_id id_;
-        chunk_header_map_sptr<T> hmap_;
 };
 
 template<typename T>
@@ -107,10 +99,8 @@ public:
         chunk_merge_task(chunk_merge_task&&) = default;
         chunk_merge_task& operator=(chunk_merge_task&&) = default;
 
-        void execute(size_t in_buff_size, size_t out_buff_size, chunk_header_map_sptr<T> hmap)
+        void execute(size_t in_buff_size, size_t out_buff_size)
         {
-                hmap_ = hmap; //TODO tmp, make it from constructor
-
                 perf_timer tm_;
                 tm_.start();
 
@@ -151,9 +141,6 @@ public:
 
                 if(IS_ENABLED(CONFIG_REMOVE_TMP_FILES))
                         remove_tmp_files();
-
-                chunk_header<T> header = chunk_istream<T>::read_header(id());
-                hmap_->set(id(), header);
 
                 if(CONFIG_INFO_LEVEL >= 2)
                 {
@@ -283,6 +270,4 @@ private:
         std::stringstream ss_;
 
         std::vector<std::string> remove_que_;
-
-        chunk_header_map_sptr<T> hmap_;
 };

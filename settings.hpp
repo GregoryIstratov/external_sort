@@ -17,9 +17,9 @@ static constexpr const char* CONFIG_INPUT_FILENAME  = "input";
 static constexpr const char* CONFIG_OUTPUT_FILENAME = "output";
 static constexpr const char* CONFIG_SCHUNK_FILENAME_PAT = "c";
 
-#define CONFIG_FORCE_DEBUG 1
+#define CONFIG_FORCE_DEBUG 0
 
-#define CONFIG_N_WAY_FLAT 0
+#define CONFIG_N_WAY_FLAT 1
 
 /* 0 - auto, n > 2 = n */
 #define CONFIG_N_WAY_MERGE_N 0

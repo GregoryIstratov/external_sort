@@ -72,61 +72,6 @@ std::ostream& operator<<(std::ostream& os, chunk_id id)
 }
 
 template<typename T>
-struct chunk_header
-{
-        T min, max;
-};
-
-
-template<typename T>
-class chunk_header_map
-{
-public:
-        chunk_header_map() = default;
-
-        void set(chunk_id id, const chunk_header<T>& header)
-        {
-                std::lock_guard<std::mutex> lock(mtx_);
-
-                auto found = map_.find(id);
-
-                if(found != map_.end())
-                        throw_exception("ID already exist in map");
-
-                map_[id] = header;
-        }
-
-        const chunk_header<T>& get(chunk_id id)
-        {
-                std::lock_guard<std::mutex> lock(mtx_);
-
-                auto found = map_.find(id);
-
-                if(found == map_.end())
-                        throw_exception("Missing ID in chunk header map");
-
-                return found->second;
-        }
-
-        std::list<std::pair<chunk_id, chunk_header<T>>>
-        get(const std::list<chunk_id>& ids)
-        {
-                std::list<std::pair<chunk_id, chunk_header<T>>> result;
-
-                for(auto id : ids)
-                        result.emplace_back(id, get(id));
-
-                return result;
-        }
-private:
-        std::map<chunk_id, chunk_header<T>> map_;
-        std::mutex mtx_;
-};
-
-template<typename T>
-using chunk_header_map_sptr = std::shared_ptr<chunk_header_map<T>>;
-
-template<typename T>
 class chunk_istream;
 
 template<typename T>
@@ -249,39 +194,6 @@ public:
 
         chunk_istream(chunk_istream&& o) = default;
         chunk_istream& operator=(chunk_istream&& o) = default;
-
-        static chunk_header<T> read_header(chunk_id id)
-        {
-                std::string filename = make_filename(id);
-
-                std::ifstream is(filename, std::ios::in | std::ios::binary);
-
-                if(!is)
-                        throw_exception("Cannot open the file '"
-                                                 << filename
-                                                 << "': "
-                                                 << strerror(errno));
-
-                is.seekg(0, std::ios::end);
-                size_t file_size = is.tellg();
-                is.seekg(0, std::ios::beg);
-
-                if (file_size % elem_size)
-                        throw_exception("File '" << filename
-                                                 << "' is broken, the size must be a product of "
-                                                 << elem_size);
-
-
-                chunk_header<T> header;
-
-                is.read((char*)&header.min, elem_size);
-
-                is.seekg(file_size - elem_size);
-
-                is.read((char*)&header.max, elem_size);
-
-                return header;
-        }
 
         void open(size_t buff_size)
         {
