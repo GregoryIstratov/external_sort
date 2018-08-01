@@ -27,9 +27,9 @@ public:
                   threads_n_(threads_n),
                   io_ratio_(io_ratio)
         {
-                mem_.imem = avail_mem_ * io_ratio / threads_n;
-                mem_.omem = avail_mem_ * (1.0f - io_ratio) / threads_n;
-                mem_.tmem = avail_mem_ / threads_n_;
+                mem_.imem = static_cast<size_t>(avail_mem_ * io_ratio / threads_n);
+                mem_.omem = static_cast<size_t>(avail_mem_ * (1.0f - io_ratio) / threads_n);
+                mem_.tmem = static_cast<size_t>(avail_mem_ / threads_n_);
         }
 
 
@@ -45,9 +45,9 @@ public:
                 if(threads_n_ == 0)
                         return;
 
-                mem_.imem = avail_mem_ * io_ratio_ / threads_n_;
-                mem_.omem = avail_mem_ * (1.0f - io_ratio_) / threads_n_;
-                mem_.tmem = avail_mem_ / threads_n_;
+                mem_.imem = static_cast<size_t>(avail_mem_ * io_ratio_ / threads_n_);
+                mem_.omem = static_cast<size_t>(avail_mem_ * (1.0f - io_ratio_) / threads_n_);
+                mem_.tmem = static_cast<size_t>(avail_mem_ / threads_n_);
         }
 
 private:
@@ -222,7 +222,9 @@ public:
         {
                 auto name = make_filename(task.id());
 
-                file_write(name.c_str(), task.data(), task.size());
+                //perf_timer("Saving sort task", [&name, &task]() {
+                        file_write(name.c_str(), task.data(), task.size());
+                //});
 
                 task.release();
 
@@ -328,20 +330,32 @@ public:
 
                 ltm.start();
 
-                auto task = tmu.next_sorting_task(lock);
+                auto task = _next_task(lock, tmu);
                 while (!task.empty())
                 {
                         task.execute();
 
                         tmu.save(lock, std::move(task));
 
-                        task = tmu.next_sorting_task(lock);
+                        task = _next_task(lock, tmu);
                 }
 
                 ltm.end();
 
                 info2() << "Thread sorting stage is done for "
                         << ltm.elapsed<perf_timer::ms>() << " ms";
+        }
+
+private:
+        auto _next_task(std::unique_lock<std::mutex>& lock, task_management_unit<T>& tmu)
+        {
+                decltype(tmu.next_sorting_task(lock)) task;
+
+                //perf_timer("Getting next sorting task", [&task, &lock, &tmu](){
+                        task = tmu.next_sorting_task(lock);
+                //});
+
+                return task;
         }
 };
 

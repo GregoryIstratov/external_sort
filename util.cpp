@@ -1,9 +1,71 @@
 #include "util.hpp"
+#include <stdexcept>
+#include <cstdio>
 #include <random>
 #include <algorithm>
 
-std::mutex logger::mtx_;
+#if defined(_WINDOWS)
 
+#include <Windows.h>
+
+class win_error_string
+{
+public:
+        ~win_error_string()
+        {
+                if(err_)
+                {
+                        LocalFree(err_);
+                        err_ = nullptr;
+                }
+        }
+
+        std::string operator()(DWORD err_code)
+        {
+                LCID lcid;
+                GetLocaleInfoEx(L"en-US", LOCALE_RETURN_NUMBER | LOCALE_ILANGUAGE, (wchar_t*)&lcid, sizeof(lcid));
+
+                if (!FormatMessageA(
+                        FORMAT_MESSAGE_ALLOCATE_BUFFER
+                        | FORMAT_MESSAGE_FROM_SYSTEM,
+                        nullptr,
+                        err_code,
+                        lcid,
+                        (LPTSTR)&err_,
+                        0,
+                        nullptr)
+                        )
+                {
+                        return std::string();
+                }
+
+                return std::string(err_);
+        }
+
+private:
+        char* err_ = nullptr;
+
+};
+
+void delete_file(const char* filename)
+{
+        if(!DeleteFileA(filename))
+        {
+                auto s = win_error_string()(GetLastError());
+
+                throw std::runtime_error(s);
+        }
+}
+
+#else
+
+void delete_file(const char* filename)
+{
+        if (std::remove(filename) != 0)
+                throw std::runtime_error(strerror(errno));
+}
+
+#endif
 
 void gen_rnd_test_file(const char* filename, uint64_t size)
 {
@@ -34,23 +96,7 @@ void gen_rnd_test_file(const char* filename, uint64_t size)
 
 void file_write(const char* filename, const void* data, size_t size)
 {
-        std::ofstream os(filename, std::ios::out
-                                   | std::ios::binary
-                                   | std::ios::trunc);
+        raw_file_writer f(filename);
 
-        if(!os)
-                throw_exception("Can't open the file '" << filename << "' :"
-                                << strerror(errno));
-
-
-
-        os.write((const char*)data, size);
-
-        if(!os)
-        {
-                throw_exception("Can't write the file '" << filename
-                                                         << "' : "
-                                                         << strerror(errno));
-
-        }
+        f.write(data, size);
 }

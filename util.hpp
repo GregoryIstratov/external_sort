@@ -16,31 +16,22 @@
 #include <vector>
 #include <random>
 #include <algorithm>
+#include <type_traits>
 
 #include "settings.hpp"
 #include "log.hpp"
+#include <atomic>
 
-class __myexception : public std::exception {
-public:
-        __myexception(const char* msg, const char* file, const char* fun, int line)
-        {
-                std::stringstream ss;
-                ss << "THR[" << get_thread_id_str() << "]" << "[" << fun << "]: " << msg << " - " << file << ":" << line;
+template<typename T>
+T zero_move(T& o) noexcept
+{
+        static_assert(std::is_trivial<T>::value, "Type must be trivial");
 
-                str_ = ss.str();
-        }
+        T tmp = o;
+        o = T();
 
-        const char* what() const noexcept override
-        { return str_.c_str(); }
-private:
-        std::string str_;
-};
-
-#define throw_exception(msg) do { \
-        std::stringstream ss; (ss << msg); \
-        throw __myexception(ss.str().c_str(), \
-                            __FILE__, __FUNCTION__, __LINE__); \
-} while(0)
+        return tmp;
+}
 
 class spinlock {
 public:
@@ -268,6 +259,8 @@ inline T round_down(T i, T mod)
         return div_up(i - mod + 1, mod) * mod;
 }
 
+void delete_file(const char* filename);
+
 void file_write(const char* filename, const void* data, size_t size);
 
 void gen_rnd_test_file(const char* filename, uint64_t size);
@@ -288,65 +281,128 @@ class raw_file_reader
 public:
         explicit
         raw_file_reader(const std::string& filename)
-                : filename_(filename)
+                : is_(nullptr), filename_(filename)
         {
-                is_.open(filename_, std::ios::in | std::ios::binary);
+                is_ = fopen(filename_.c_str(), "rb");
 
-                if(!is_)
+                if (!is_)
                         throw_exception("Cannot open the file '"
-                                        << filename
-                                        << "': "
-                                        << strerror(errno));
+                                << filename
+                                << "': "
+                                << strerror(errno));
 
-                is_.rdbuf()->pubsetbuf(nullptr, 0);
+                setvbuf(is_, nullptr, _IONBF, 0);
 
-                is_.seekg(0, std::ios::end);
-                file_size_ = is_.tellg();
-                is_.seekg(0, std::ios::beg);
+                fseek(is_, 0, SEEK_END);
+                file_size_ = ftell(is_);
+                rewind(is_);
         }
 
-        raw_file_reader(const raw_file_reader&) = delete;
-        raw_file_reader& operator=(const raw_file_reader&) = delete;
+        ~raw_file_reader()
+        {
+                close();
+        }
 
 
-        raw_file_reader(raw_file_reader&& o) = default;
-        raw_file_reader& operator=(raw_file_reader&& o) = default;
+        raw_file_reader(raw_file_reader&& o) noexcept
+                : is_(zero_move(o.is_)),
+                  filename_(std::move(o.filename_)),
+                  file_size_(zero_move(o.file_size_)),
+                  read_(zero_move(o.read_))
+        {
+        }
+
+        raw_file_reader& operator=(raw_file_reader&& o) = delete;
 
         void close()
         {
-                if(is_)
-                        is_.close();
-
-                is_ = std::ifstream();
+                if (is_) {
+                        fclose(is_);
+                        is_ = nullptr;
+                }
         }
 
 
         std::streamsize read(char* buff, std::streamsize size)
         {
-                is_.read(buff, size);
+                auto r = fread(buff, 1, size, is_);
 
-                if(is_.bad() || (is_.bad() && !is_.eof()))
+                if (ferror(is_))
                         throw_exception("Cannot read the file '"
                                         << filename_
                                         << "': "
                                         << strerror(errno));
-
-                std::streamsize r = is_.gcount();
                 read_ += r;
 
                 return r;
         }
 
-        bool eof() const { return is_.eof() || read_ >= file_size_; }
+        bool eof() const { return feof(is_) || read_ >= file_size_; }
 
         std::string filename() const { return filename_; }
         uint64_t file_size() const { return file_size_; }
 
 private:
-        std::ifstream is_;
+        FILE* is_ = nullptr;
         std::string filename_;
-        uint64_t file_size_;
+        uint64_t file_size_ = 0;
         uint64_t read_ = 0;
+};
+
+class raw_file_writer
+{
+public:
+        explicit
+        raw_file_writer(const std::string& filename)
+                : is_(nullptr), filename_(filename)
+        {
+                is_ = fopen(filename_.c_str(), "wb");
+
+                if (!is_)
+                        throw_exception("Cannot open the file '"
+                                << filename
+                                << "': "
+                                << strerror(errno));
+
+                setvbuf(is_, nullptr, _IONBF, 0);
+        }
+
+        ~raw_file_writer()
+        {
+                close();
+        }
+
+        raw_file_writer(raw_file_writer&& o) noexcept
+                : is_(zero_move(o.is_)),
+                  filename_(std::move(o.filename_))
+        {
+        }
+
+        raw_file_writer& operator=(raw_file_writer&& o) = delete;
+
+        void close()
+        {
+                if (is_) {
+                        fclose(is_);
+                        is_ = nullptr;
+                }
+        }
+
+        void write(const void* buff, std::size_t size)
+        {
+                fwrite(buff, 1, size, is_);
+
+                if (ferror(is_))
+                        throw_exception("Cannot write the file '"
+                                << filename_
+                                << "': "
+                                << strerror(errno));
+        }
+
+        std::string filename() const { return filename_; }
+private:
+        FILE * is_ = nullptr;
+        std::string filename_;
 };
 
 /* ====================================================
@@ -387,4 +443,7 @@ private:
 #define ___is_defined(val)		____is_defined(__ARG_PLACEHOLDER_##val)
 #define ____is_defined(arg1_or_junk)	__take_second_arg(arg1_or_junk 1, 0)
 
-#define IS_ENABLED(option) __is_defined(option)
+// Doesn't work with Visual Studio
+//#define IS_ENABLED(option) __is_defined(option)
+
+#define IS_ENABLED(option) (option)

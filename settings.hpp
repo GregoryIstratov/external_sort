@@ -24,7 +24,7 @@ static constexpr const char* CONFIG_SCHUNK_FILENAME_PAT = "c";
 /* 0 - auto, n > 2 = n */
 #define CONFIG_N_WAY_MERGE_N 0
 
-static constexpr int CONFIG_TREE_HEIGH = 2;
+static constexpr int CONFIG_TREE_HEIGH = 5;
 
 /* -5 MiB for program itself and some part of each thread stack*/
 static constexpr size_t CONFIG_MEM_AVAIL = 10 * MEGABYTE;

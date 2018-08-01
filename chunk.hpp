@@ -15,13 +15,36 @@
 
 struct chunk_id
 {
-        using id_t = uint16_t;
-        using lvl_t = uint16_t;
+        using id_t = uint32_t;
+        using lvl_t = uint32_t;
 
-        chunk_id() = default;
+        chunk_id() : _bits((uint32_t)-1) {}
+        ~chunk_id() = default;
+
         chunk_id(lvl_t _lvl, id_t _id)
                 : lvl(_lvl), id(_id)
         {}
+
+
+        chunk_id(const chunk_id&) noexcept = default;
+        chunk_id& operator=(const chunk_id&) noexcept = default;
+
+        chunk_id(chunk_id&& o) noexcept
+                : _bits(o._bits)
+        {
+                o._bits = (uint64_t)-1;
+        }
+
+        chunk_id& operator=(chunk_id&& o) noexcept
+        {
+                if (&o == this)
+                        return *this;
+
+                _bits = o._bits;
+                o._bits = (uint64_t)-1;
+
+                return *this;
+        }
 
         union
         {
@@ -31,7 +54,7 @@ struct chunk_id
                         id_t  id;
                 };
 
-                uint32_t _bits;
+                uint64_t _bits;
         };
 };
 

@@ -179,12 +179,19 @@ private:
 
         void remove_tmp_files()
         {
+                // closes all files
+                input = decltype(input)();
+
                 for(const auto& filename : remove_que_)
                 {
-                        if(std::remove(filename.c_str()) != 0)
+                        try
+                        {
+                                delete_file(filename.c_str());
+                        }
+                        catch(const std::exception& e)
                         {
                                 error() << "Failed to remove tmp file '"
-                                           << filename << "': " << strerror(errno);
+                                        << filename << "': " << e.what();
                         }
                 }
         }

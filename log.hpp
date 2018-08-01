@@ -1,10 +1,13 @@
 #pragma once
 
 #include <iostream>
+#include <fstream>
 #include <iomanip>
 #include <thread>
 #include <mutex>
 #include "settings.hpp"
+#include "exception.hpp"
+
 
 inline
 std::string get_thread_id_str()
@@ -25,9 +28,15 @@ std::string get_thread_id_str()
 class logger
 {
 public:
-        ~logger()
+        ~logger() noexcept(false)
         {
-                os_ << std::endl;
+                std::lock_guard<std::mutex> lk(mtx_);
+
+                auto s = oss_.str();
+                if(fos_.is_open()) 
+                        fos_ << s << std::endl;
+
+                os_  << s << std::endl;
         }
 
         logger(logger&&) = delete;
@@ -36,16 +45,26 @@ public:
         logger& operator=(logger&&) = delete;
         logger& operator=(const logger&) = delete;
 
+        static void enable_file_logging(std::string&& filename)
+        {
+                fos_.rdbuf()->pubsetbuf(nullptr, 0);
+
+                fos_.open(filename, std::ios::out | std::ios::app);
+
+                if (!fos_)
+                        throw_exception("Cannot open the file '" << filename << "': " << strerror(errno));
+        }
+
 protected:
         explicit
         logger(const char* type, std::ostream& os = std::cout)
-                : lock_(mtx_), os_(os), fmt_guard_(os_)
+                : os_(os)
         {
-                os_ << "[+"
-                    << std::fixed << std::setprecision(3)
-                    << (clock() / (float)CLOCKS_PER_SEC) << "]"
-                    << "[" << type << "]["
-                    << get_thread_id_str() << "]: ";
+                oss_ << "[+"
+                        << std::fixed << std::setprecision(3)
+                        << (clock() / (float)CLOCKS_PER_SEC) << "]"
+                        << "[" << type << "]["
+                        << get_thread_id_str() << "]: ";
         }
 
         class fmt_guard
@@ -70,18 +89,21 @@ protected:
 protected:
         static std::mutex mtx_;
 
-        std::unique_lock<std::mutex> lock_;
         std::ostream& os_;
-        fmt_guard fmt_guard_;
+        std::ostringstream oss_;
+
+//        fmt_guard fmt_guard_;
 private:
         template<typename T>
         friend logger&& operator<<(logger&& _log, T&& v);
+
+        static std::ofstream fos_;
 };
 
 template<typename T>
 logger&& operator<<(logger&& _log, T&& v)
 {
-        _log.os_ << v;
+        _log.oss_ << v;
         return std::move(_log);
 }
 

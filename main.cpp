@@ -117,7 +117,7 @@ uint32_t get_nway_merge_n(uint64_t cn)
         if(IS_ENABLED(CONFIG_N_WAY_MERGE_N))
                 return (uint32_t)CONFIG_N_WAY_MERGE_N;
 
-        return (uint32_t)std::round(solve_merge_n_eq2(cn, CONFIG_TREE_HEIGH));
+        return (uint32_t)std::round(solve_merge_n_eq2((float)cn, CONFIG_TREE_HEIGH));
 }
 
 void check_result(uint64_t isz)
@@ -185,6 +185,8 @@ void make_test_file()
 int main()
 try
 {
+        logger::enable_file_logging("external_sort.log");
+
         if(IS_ENABLED(CONFIG_GENERATE_TEST_FILE))
                 perf_timer("Test file generating", &make_test_file);
 
@@ -210,11 +212,11 @@ try
         nmrg = nmrg <= 1 ? 2 : nmrg;
 
         float ior  = CONFIG_IO_BUFF_RATIO;
-        uint64_t ibsz = std::floor(tram * ior / (float)nmrg);
-        uint64_t obsz = std::floor(tram * (1.0f - ior));
+        uint64_t ibsz = static_cast<uint64_t>(tram * ior / (float)nmrg);
+        uint64_t obsz = static_cast<uint64_t>(tram * (1.0f - ior));
 
-        ibsz = round_up(ibsz, sizeof(data_t));
-        obsz = round_up(obsz, sizeof(data_t));
+        ibsz = round_up(ibsz, (uint64_t)sizeof(data_t));
+        obsz = round_up(obsz, (uint64_t)sizeof(data_t));
 
         size_t chunk_size = cs0;
         size_t in_buff_size = ibsz;
@@ -236,7 +238,10 @@ try
         info() << "L0 Chunk Count: " << num_format(cn);
 
         processor<data_t> pcr(std::move(rfr_),
-                              chunk_size, n_way_merge, threads_n, ram, ior,
+                              chunk_size, n_way_merge, 
+                              (uint32_t)threads_n, 
+                              ram, 
+                              ior,
                               CONFIG_OUTPUT_FILENAME);
 
         perf_timer("Finished for", [&pcr](){

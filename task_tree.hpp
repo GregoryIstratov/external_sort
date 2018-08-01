@@ -12,8 +12,8 @@ struct task_tree_node
 {
         std::unique_ptr<chunk_merge_task<T>> task;
 
-        std::list<std::shared_ptr<task_tree_node>> childs;
-        std::shared_ptr<task_tree_node> parent;
+        std::list<std::unique_ptr<task_tree_node>> childs;
+        task_tree_node* parent;
 };
 
 template<typename T>
@@ -27,7 +27,7 @@ public:
                 chunk_id::id_t id_idx   = 0;
                 chunk_id::lvl_t lvl_idx = 1;
 
-                std::list<std::shared_ptr<task_tree_node<T>>> nodes;
+                std::list<std::unique_ptr<task_tree_node<T>>> nodes;
 
                 while(!l0_ids.empty())
                 {
@@ -53,25 +53,25 @@ public:
                         chunk_id output_id(lvl_idx, id_idx++);
                         auto task = make_task(std::move(ids), output_id);
 
-                        auto node = std::make_shared<task_tree_node<T>>();
+                        auto node = std::make_unique<task_tree_node<T>>();
                         node->task = std::move(task);
 
                         nodes.push_back(std::move(node));
                 }
 
-                root_ = build(std::move(nodes), ++lvl_idx);
+                root_ = std::move(build(std::move(nodes), ++lvl_idx));
         }
 
         std::list<std::unique_ptr<chunk_merge_task<T>>> make_queue()
         {
-                std::list<std::shared_ptr<task_tree_node<T>>> q;
+                std::list<std::unique_ptr<task_tree_node<T>>> q;
                 std::list<std::unique_ptr<chunk_merge_task<T>>> q2;
 
-                q.push_back(root_);
+                q.push_back(std::move(root_));
 
                 while(!q.empty())
                 {
-                        auto node = q.front();
+                        auto node = std::move(q.front());
 
                         q.pop_front();
 
@@ -79,7 +79,7 @@ public:
 
                         for(auto& c : node->childs)
                         {
-                                q.push_back(c);
+                                q.push_back(std::move(c));
                         }
                 }
 
@@ -89,11 +89,15 @@ public:
 
 private:
 
-        std::shared_ptr<task_tree_node<T>>
-        build(std::list<std::shared_ptr<task_tree_node<T>>>&& nodes,
+        std::unique_ptr<task_tree_node<T>>
+        build(std::list<std::unique_ptr<task_tree_node<T>>>&& nodes,
               chunk_id::lvl_t lvl)
         {
-                std::list<std::shared_ptr<task_tree_node<T>>> new_nodes;
+
+                if (nodes.size() == 1)
+                        return std::move(nodes.back());
+
+                std::list<std::unique_ptr<task_tree_node<T>>> new_nodes;
                 chunk_id::id_t id = 0;
                 while(!nodes.empty())
                 {
@@ -105,7 +109,7 @@ private:
                         if(0 < rem && rem < base_)
                                 n += rem;
 
-                        std::list<std::shared_ptr<task_tree_node<T>>> childs;
+                        std::list<std::unique_ptr<task_tree_node<T>>> childs;
 
                         auto end = nodes.begin();
                         std::advance(end, n);
@@ -118,13 +122,13 @@ private:
                         chunk_id output_id(lvl, id++);
 
                         std::vector<chunk_istream<T>> chunks;
-                        auto new_node = std::make_shared<task_tree_node<T>>();
+                        auto new_node = std::make_unique<task_tree_node<T>>();
 
                         for(auto& node : childs)
                         {
                                 chunks.emplace_back(node->task->id());
 
-                                node->parent = new_node;
+                                node->parent = new_node.get();
                         }
 
                         std::string name = make_filename(output_id);
@@ -143,7 +147,7 @@ private:
                 if(new_nodes.size() > 1)
                         return build(std::move(new_nodes), ++lvl);
                 else
-                        return new_nodes.back();
+                        return std::move(new_nodes.back());
         }
 
 
@@ -167,5 +171,5 @@ private:
 
 private:
         size_t base_;
-        std::shared_ptr<task_tree_node<T>> root_;
+        std::unique_ptr<task_tree_node<T>> root_;
 };
