@@ -243,7 +243,7 @@ public:
                                                  << elem_size);
 
                 is_.rdbuf()->pubsetbuf((char*)&buffer_[0], buff_size);
-
+                
                 if (!next())
                         throw_exception("Can't read the file " << filename_
                                                  << " seems like it's empty");
@@ -335,7 +335,7 @@ public:
         void release()
         {
                 is_ = std::ifstream();
-                buffer_ = std::vector<uint32_t>();
+                buffer_ = std::vector<T>();
         }
 
         void copy(chunk_ostream<T>& os)
@@ -389,10 +389,10 @@ private:
         std::string filename_;
         size_t buff_size_;
         size_t buff_elem_n_;
-        std::vector<uint32_t> buffer_;
+        std::vector<T> buffer_;
         std::ifstream is_;
-        T val_;
-        uint64_t file_size_;
+        T val_ = T();
+        uint64_t file_size_ = 0;
         uint64_t read_ = 0;
 };
 

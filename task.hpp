@@ -201,34 +201,47 @@ private:
                 is.copy(output);
         }
 
+
+        // cache friendly heap items
+        struct heap_item
+        {
+                T value;                
+                chunk_istream<T>* is;
+
+                friend static bool operator<(const heap_item& a, const heap_item& b)
+                {
+                        return a.value > b.value;
+                }
+        };
+        
         void pq_merge()
         {
-                std::vector<chunk_istream<T>*> heap(input.size());
+                std::vector<heap_item> heap(input.size());
 
-                for(size_t i = 0; i < input.size(); ++i)
-                        heap[i] = &input[i];
-
-                auto cmp = [](const chunk_istream<T>* a, const chunk_istream<T>* b)
+                for (uint32_t i = 0; i < input.size(); ++i)
                 {
-                        return a->value() > b->value();
-                };
+                        heap[i].value = input[i].value();
+                        heap[i].is = &input[i];
+                }
 
-                std::make_heap(heap.begin(), heap.end(), cmp);
+                std::make_heap(heap.begin(), heap.end());
                 while (!heap.empty())
                 {
-                        std::pop_heap(heap.begin(), heap.end(), cmp);
+                        std::pop_heap(heap.begin(), heap.end());
 
-                        T v = heap.back()->value();
+                        T v = heap.back().value;
                         output.put(v);
 
-                        if (!heap.back()->next())
+                        if (heap.back().is->next())
+                                heap.back().value = heap.back().is->value();
+                        else
                                 heap.pop_back();
 
-                        std::push_heap(heap.begin(), heap.end(), cmp);
+                        std::push_heap(heap.begin(), heap.end());
 
                         if (heap.size() == 1)
                         {
-                                copy_to_output(*heap.back());
+                                copy_to_output(*heap.back().is);
                                 heap.pop_back();
                         }
                 }

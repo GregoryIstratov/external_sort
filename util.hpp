@@ -194,13 +194,51 @@ public:
         }
 
         template<typename T>
-        auto elapsed()
+        auto elapsed() const
         {
                 return std::chrono::duration_cast<T>(end_ - start_).count();
         }
 
 private:
         std::chrono::high_resolution_clock::time_point start_, end_;
+};
+
+class call_perf_timer
+{
+public:
+        explicit 
+        call_perf_timer(const char* msg_literal) 
+        : msg_literal_(msg_literal) {}
+
+        ~call_perf_timer()
+        {
+                std::cout << msg_literal_ 
+                << ": calls - " << calls_n_ 
+                << " total ns - " << total_ns_ 
+                << " avg. call ns - " << (total_ns_ / calls_n_) 
+                << std::endl;
+        }
+
+        void start()
+        {
+                ++calls_n_;
+
+                tm_.start();
+        }
+
+        void end()
+        {
+                tm_.end();
+                total_ns_ += tm_.elapsed<std::chrono::nanoseconds>();
+        }
+
+
+
+private:
+        perf_timer tm_;
+        uint64_t total_ns_ = 0;
+        uint64_t calls_n_ = 0;
+        const char* msg_literal_;
 };
 
 inline
