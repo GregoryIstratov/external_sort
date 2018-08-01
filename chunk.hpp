@@ -109,6 +109,10 @@ public:
 
         {}
 
+        ~chunk_ostream()
+        {
+                close();
+        }
 
         chunk_ostream(chunk_ostream&&) = default;
         chunk_ostream& operator=(chunk_ostream&&) = default;
@@ -118,24 +122,27 @@ public:
                 buff_size_ = buff_size;
                 buff_.resize(buff_size);
 
-                os_.rdbuf()->pubsetbuf(&buff_[0], buff_size);
-                os_.open(filename_, std::ios::out | std::ios::trunc | std::ios::binary);
-
+                
+                os_ = fopen(filename_.c_str(), "wb");
                 if (!os_)
                         throw_exception("Can't open the file " << filename_);
+
+                setvbuf(os_, &buff_[0], _IOFBF, buff_size);
         }
 
         void put(T v)
         {
-                os_.write((char*)&v, sizeof(T));
+                fwrite((char*)&v, sizeof(T), 1,  os_);
         }
 
-        void close()
+        void close() noexcept
         {
-                os_.flush();
-                os_.close();
+                if(os_)
+                {
+                        fclose(os_);
+                        os_ = nullptr;
+                }
 
-                os_ = std::ofstream();
                 buff_ = std::vector<char>();
         }
 
@@ -148,7 +155,7 @@ private:
 
 private:
         std::vector<char> buff_;
-        std::ofstream os_;
+        FILE* os_ = nullptr;
         std::string filename_;
         size_t buff_size_ = 0;
 };
@@ -214,6 +221,10 @@ public:
                   filename_(std::move(filename))
         {}
 
+        ~chunk_istream()
+        {
+                release();
+        }
 
         chunk_istream(chunk_istream&& o) = default;
         chunk_istream& operator=(chunk_istream&& o) = default;
@@ -225,7 +236,7 @@ public:
                 buff_elem_n_ = get_buff_elem_n(buff_size);
                 buffer_.resize(buff_elem_n_);
 
-                is_.open(filename_, std::ios::in | std::ios::binary);
+                is_ = fopen(filename_.c_str(), "rb");
 
                 if(!is_)
                         throw_exception("Cannot open the file '"
@@ -233,16 +244,16 @@ public:
                                                  << "': "
                                                  << strerror(errno));
 
-                is_.seekg(0, std::ios::end);
-                file_size_ = is_.tellg();
-                is_.seekg(0, std::ios::beg);
+                fseek(is_, 0, SEEK_END);
+                file_size_ = ftell(is_);
+                rewind(is_);
 
                 if (file_size_ % elem_size)
                         throw_exception("File '" << filename_
                                                  << "' is broken, the size must be a product of "
                                                  << elem_size);
 
-                is_.rdbuf()->pubsetbuf((char*)&buffer_[0], buff_size);
+                setvbuf(is_, (char*)&buffer_[0], _IOFBF, buff_size);
                 
                 if (!next())
                         throw_exception("Can't read the file " << filename_
@@ -256,93 +267,43 @@ public:
                 if (read_ >= file_size_)
                         return false;
 
-                is_.read((char*)&val_, elem_size);
+                size_t r = fread((char*)&val_, 1, elem_size, is_);
 
-                if(is_.bad() || (is_.bad() && !is_.eof()))
+                if(ferror(is_))
                         throw_exception("Cannot read the file '"
                                                  << filename_
                                                  << "': "
                                                  << strerror(errno));
 
-                read_ += is_.gcount();
+                read_ += r;
 
-                return is_.gcount() == elem_size;
+                return r == elem_size;
         }
+        bool eof() const { return feof(is_) || read_ >= file_size_; }
 
-        void debug_dump()
+        void release() noexcept
         {
-                pos_guard pg(is_);
-                is_.seekg(0, std::ios::beg);
-
-                std::stringstream ss;
-
-                ss << "chunk(" << make_filename(id()) << "): [";
-
-                chunk_istream_iterator<T> beg(*this), end;
-
-                std::copy(beg, end, std::ostream_iterator<T>(ss, " "));
-
-                ss << "]";
-
-                debug() << ss.rdbuf();
-        }
-
-        int64_t search(T value)
-        {
-                std::ifstream is(filename(), std::ios::in | std::ios::binary);
-
-                if(!is)
-                        throw_exception("Cannot open the file for search'"
-                                                 << filename_
-                                                 << "': "
-                                                 << strerror(errno));
-
-
-                //is.rdbuf()->pubsetbuf(nullptr, 0);
-
-                pos_guard pg(is_);
-
-                is.seekg(0, std::ios::beg);
-
-                int64_t l,r, m;
-
-                l = 0;
-                r = count() - 1;
-
-                while(l <= r)
+                if(is_)
                 {
-                        m = (l + r) / 2;
-
-                        is.seekg(get_el_offset(m));
-
-                        T a;
-                        is.read((char*) &a, elem_size);
-
-                        if(value < a)
-                                r = m - 1;
-                        else if(value > a)
-                                l = m + 1;
-                        else
-                                return m;
+                        fclose(is_);
+                        is_ = nullptr;
                 }
 
-                m = (l + r) / 2;
-                return m;
-        }
-
-        bool eof() const { return is_.eof() || read_ >= file_size_; }
-
-        void release()
-        {
-                is_ = std::ifstream();
                 buffer_ = std::vector<T>();
         }
 
-        void copy(chunk_ostream<T>& os)
+        void copy_to(chunk_ostream<T>& os)
         {
                 os.put(value());
 
-                os.os_ << is_.rdbuf();
+                char buff[4 * KILOBYTE];
+
+                while(!feof(is_))
+                {
+                        size_t r = fread(buff, 1, 4 * KILOBYTE, is_);
+
+                        fwrite(buff, 1, r, os.os_);
+                }
         }
 
         chunk_id id() const { return id_; }
@@ -354,27 +315,7 @@ public:
         size_t buff_size() const { return buff_size_; }
 
 private:
-        class pos_guard {
-                std::ifstream& is_;
-                decltype(is_.tellg()) pos_;
-        public:
-                explicit
-                pos_guard(std::ifstream& is) : is_(is) {
-                        pos_ = is_.tellg();
-                }
-
-                ~pos_guard()
-                {
-                        is_.seekg(pos_);
-                }
-        };
-
-        uint64_t get_el_offset(uint64_t el)
-        {
-                return el * elem_size;
-        }
-
-        size_t get_buff_elem_n(size_t buff_size)
+        static size_t get_buff_elem_n(size_t buff_size)
         {
                 if (buff_size % elem_size)
                         throw_exception("buff_size="
@@ -390,7 +331,7 @@ private:
         size_t buff_size_;
         size_t buff_elem_n_;
         std::vector<T> buffer_;
-        std::ifstream is_;
+        FILE* is_ = nullptr;
         T val_ = T();
         uint64_t file_size_ = 0;
         uint64_t read_ = 0;

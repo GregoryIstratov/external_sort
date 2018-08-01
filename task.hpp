@@ -198,7 +198,7 @@ private:
 
         void copy_to_output(chunk_istream<T>& is)
         {
-                is.copy(output);
+                is.copy_to(output);
         }
 
 
