@@ -208,7 +208,7 @@ private:
                 T value;                
                 chunk_istream<T>* is;
 
-                friend static bool operator<(const heap_item& a, const heap_item& b)
+                friend bool operator<(const heap_item& a, const heap_item& b)
                 {
                         return a.value > b.value;
                 }

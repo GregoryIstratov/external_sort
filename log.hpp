@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <thread>
 #include <mutex>
+#include <cstring>
 #include "settings.hpp"
 #include "exception.hpp"
 
@@ -152,9 +153,9 @@ struct debug
 };
 
 template<typename T>
-debug&& operator<<(debug&& _log, const T &v)
+debug&& operator<<(debug&& log, const T&)
 {
-        return std::move(_log);
-}
+        return std::move(log);
+};
 
 #endif
