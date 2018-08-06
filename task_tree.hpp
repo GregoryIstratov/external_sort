@@ -3,8 +3,6 @@
 #include <memory>
 #include <list>
 
-#include "chunk.hpp"
-#include "util.hpp"
 #include "task.hpp"
 
 template<typename T>
@@ -13,14 +11,14 @@ struct task_tree_node
         std::unique_ptr<chunk_merge_task<T>> task;
 
         std::list<std::unique_ptr<task_tree_node>> childs;
-        task_tree_node* parent;
+        task_tree_node* parent = nullptr;
 };
 
 template<typename T>
 class task_tree
 {
 public:
-        void build(std::list<chunk_id> l0_ids, size_t base)
+        void build(std::list<chunk_id>& l0_ids, size_t base)
         {
                 base_ = base;
 
@@ -131,7 +129,7 @@ private:
                                 node->parent = new_node.get();
                         }
 
-                        std::string name = make_filename(output_id);
+                        std::string name = output_id.to_full_filename();
                         chunk_ostream<T> os(std::move(name));
 
 
@@ -161,7 +159,7 @@ private:
                         chunks.emplace_back(id);
                 }
 
-                std::string name = make_filename(output_id);
+                std::string name = output_id.to_full_filename();
                 chunk_ostream<T> os(std::move(name));
 
                 return std::make_unique<chunk_merge_task<T>>(std::move(chunks),
@@ -170,6 +168,6 @@ private:
         }
 
 private:
-        size_t base_;
+        size_t base_ = 0;
         std::unique_ptr<task_tree_node<T>> root_;
 };

@@ -5,38 +5,116 @@
 #include <iomanip>
 #include <thread>
 #include <mutex>
-#include "settings.hpp"
-#include "exception.hpp"
+#include <ctime>
+#include "config.hpp"
+#include "tools/exception.hpp"
+#include "tools/spinlock.hpp"
+#include "tools/util.hpp"
 
+namespace logging {
 
-inline
-std::string get_thread_id_str()
+enum class fmt : uint32_t
 {
-        static const auto flags = std::ios_base::hex
-                                  | std::ios_base::uppercase
-                                  | std::ios_base::showbase;
+        endl = 1,
+        clock = 1 << 1,
+        time = 1 << 2,
+        thread = 1 << 3,
+        append = 1 << 4
+};
 
-        std::stringstream ss;
-        ss  << std::resetiosflags(std::ios_base::dec)
-            << std::setiosflags(flags)
-            << std::this_thread::get_id();
-
-
-        return ss.str();
+constexpr fmt operator|(fmt a, fmt b)
+{
+        return static_cast<fmt>(static_cast<uint32_t>(a) 
+                | static_cast<uint32_t>(b));
 }
+
+constexpr fmt operator&(fmt a, fmt b)
+{
+        return static_cast<fmt>(static_cast<uint32_t>(a)
+                & static_cast<uint32_t>(b));
+}
+
+constexpr fmt operator^(fmt a, fmt b)
+{
+        return static_cast<fmt>(static_cast<uint32_t>(a)
+                ^ static_cast<uint32_t>(b));
+}
+
+constexpr fmt operator~(fmt x)
+{
+        return static_cast<fmt>(~static_cast<uint32_t>(x));
+}
+
+
+struct fmt_set
+{
+        explicit fmt_set(fmt _value) : value(_value) {}
+
+        fmt value;
+};
+
+struct fmt_clear
+{
+        explicit fmt_clear(fmt _value) : value(_value) {}
+
+        fmt value;
+};
+
+template<typename T>
+constexpr bool test_flag(T x, T flag)
+{
+        static_assert(std::is_enum_v<T> || std::is_trivial_v<T>, 
+                "type of T must be enum or trivial");
+
+        return static_cast<bool>(x & flag);
+}
+
+template<typename T>
+constexpr void clear_flag(T* x, T flag)
+{
+        static_assert(std::is_enum_v<T> || std::is_trivial_v<T>,
+                "type of T must be enum or trivial");
+
+        *x = *x & (~flag);
+}
+
+static constexpr auto default_log_format = fmt::endl | fmt::clock | fmt::time | fmt::thread;
 
 class logger
 {
 public:
-        ~logger() noexcept(false)
+        ~logger()
         {
-                std::lock_guard<std::mutex> lk(mtx_);
+                try
+                {
+                        std::lock_guard<std::mutex> lk(mtx_);
 
-                auto s = oss_.str();
-                if(fos_.is_open()) 
-                        fos_ << s << std::endl;
+                        //auto s = oss_.str();
+                        if (fos_.is_open())
+                        {
+                                fos_ << oss_.rdbuf();
 
-                os_  << s << std::endl;
+                                if (test_flag(fmt_, fmt::endl))
+                                        fos_ << std::endl;
+                        }
+
+                        oss_.seekg(0);
+
+                        os_ << oss_.rdbuf();
+
+                        if (test_flag(fmt_, fmt::endl))
+                                os_ << std::endl;
+                }
+                catch (const std::exception& e)
+                {
+                        std::cerr << "Caught exception in ~logger(): " 
+                                  << e.what() << std::endl;
+                }
+                catch (...)
+                {
+                        std::cerr << "Caught unknown exception in ~logger(): " 
+                                  << std::endl;
+                }
         }
 
         logger(logger&&) = delete;
@@ -52,50 +130,96 @@ public:
                 fos_.open(filename, std::ios::out | std::ios::app);
 
                 if (!fos_)
-                        throw_exception("Cannot open the file '" << filename << "': " << strerror(errno));
+                        throw_exception("Cannot open the file '" 
+                                        << filename << "': " 
+                                        << strerror(errno));
         }
 
 protected:
         explicit
-        logger(const char* type, std::ostream& os = std::cout)
-                : os_(os)
+        logger(const char* const type, std::ostream& os = std::cout)
+                : type_(type), os_(os)
         {
-                oss_ << "[+"
-                        << std::fixed << std::setprecision(3)
-                        << (clock() / (float)CLOCKS_PER_SEC) << "]"
-                        << "[" << type << "]["
-                        << get_thread_id_str() << "]: ";
         }
 
-        class fmt_guard
+        void _print_time()
         {
-        public:
-                explicit
-                fmt_guard(std::ios& _ios) : ios_(_ios), init_(nullptr)
-                {
-                        init_.copyfmt(ios_);
-                }
+                std::time_t t = std::time(nullptr);
 
-                ~fmt_guard()
-                {
-                        ios_.copyfmt(init_);
-                }
+                /* specification says that std::localtime may not be thread-safe
+                 * so we need apply a lock before calling it */
+                std::unique_lock<spinlock> lk(spinlock_);
+                std::tm tm = *std::localtime(&t);
+                lk.unlock();
 
-        private:
-                std::ios& ios_;
-                std::ios init_;
-        };
+                oss_ << std::put_time(&tm, "[%T][%D]");
+        }
+
+        void _print_clock()
+        {
+                oss_ 
+                << "[+"
+                << std::fixed << std::setprecision(3)
+                << (clock() / (float)CLOCKS_PER_SEC) 
+                << "]";
+
+        }
+
+        void _print_thread_id()
+        {
+                oss_ << "[" << get_thread_id_str() << "]";
+        }
 
 protected:
         static std::mutex mtx_;
+        static spinlock spinlock_;
+
+        const char* const type_;
 
         std::ostream& os_;
-        std::ostringstream oss_;
+        std::stringstream oss_;       
 
-//        fmt_guard fmt_guard_;
+        fmt fmt_ = default_log_format;
+
 private:
+        void _init()
+        {
+                init_ = true;
+
+                if (test_flag(fmt_, fmt::append))
+                        return;
+
+                if (test_flag(fmt_, fmt::clock))
+                        _print_clock();
+
+                if (test_flag(fmt_, fmt::time))
+                        _print_time();
+
+                if (test_flag(fmt_, fmt::thread))
+                        _print_thread_id();
+
+                oss_ << "[" << type_ << "]: ";
+        }
+
+        friend logger&& operator<<(logger&& _log, fmt_set fmt)
+        {
+                _log.fmt_ = _log.fmt_ | fmt.value;
+
+                return std::move(_log);
+        }
+
+        friend logger&& operator<<(logger&& _log, fmt_clear fmt)
+        {
+                clear_flag(&_log.fmt_, fmt.value);
+
+                return std::move(_log);
+        }
+
         template<typename T>
         friend logger&& operator<<(logger&& _log, T&& v);
+
+private:
+        bool init_ = false;
 
         static std::ofstream fos_;
 };
@@ -103,6 +227,9 @@ private:
 template<typename T>
 logger&& operator<<(logger&& _log, T&& v)
 {
+        if (!_log.init_)
+                _log._init();
+
         _log.oss_ << v;
         return std::move(_log);
 }
@@ -152,9 +279,16 @@ struct debug
 };
 
 template<typename T>
-debug&& operator<<(debug&& _log, const T &v)
+debug&& operator<<(debug&& log, const T&)
 {
-        return std::move(_log);
+        return std::move(log);
 }
 
 #endif
+
+} // namespace logging
+
+using logging::debug;
+using logging::error;
+using logging::info;
+using logging::info2;

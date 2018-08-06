@@ -5,22 +5,6 @@
  * that cannot fit into machine's RAM by splitting input
  * file into small pieces that fit into main memory
  * sorting and merging them into one file.
- * 
- * =====================================================
- *                FORMULAS OF COMPUTATION
- * =====================================================
- *
- * RAM  - Ram Size ( 128 Mb default )
- * ISZ  - input file size > RAM.
- * NCPU - Number of CPU threads ( auto or 2 default )
- * TRAM - Ram per thread - RAM / NCPU
- * MLVL - Max level = 2
- * CS0  - L0 Chunk Size   = TRAM
- * CN   - L0 Chunk Number = ISZ / CS0
- * NMRG - N-Way merge, solution for log(CN)/log(x) = MLVL = CN^(1/MLVL)
- * IOR  - In/out TRAM ratio - default 0.5
- * IBSZ - In Buffer Size per chunk = TRAM * IOR / NMRG
- * OBSZ - Out buffer size per task = TRAM * (1 - IOR) / NMRG
  *
  * =====================================================
  *               MULTITHREADED PIPELINE
@@ -88,11 +72,11 @@
 #include <type_traits>
 #include <iterator>
 
-#include "chunk.hpp"
-#include "util.hpp"
-#include "task_tree.hpp"
 #include "task.hpp"
-#include "pipeline.hpp"
+#include "pipeline/pipeline_controller.hpp"
+#include "log.hpp"
+#include "extra/hasher.hpp"
+#include "chunk/chunk_istream.hpp"
 
 float solve_merge_n_eq2(float a, float c)
 {
@@ -122,138 +106,202 @@ uint32_t get_nway_merge_n(uint64_t cn)
 
 void check_result(uint64_t isz)
 {
-        chunk_istream<CONFIG_DATA_TYPE> res_is(CONFIG_OUTPUT_FILENAME);
-        res_is.open(CONFIG_MEM_AVAIL);
+        if (!IS_ENABLED(CONFIG_CHECK_HASH))
+        {
+                chunk_istream<CONFIG_DATA_TYPE> res_is;
+                res_is.open(CONFIG_OUTPUT_FILENAME, CONFIG_MEM_AVAIL);
 
-        uint64_t sz = res_is.size();
-        if(isz == sz)
-                info2() << "Input filesize " << isz << "==" <<sz<<" output filesize";
+                uint64_t sz = res_is.size();
+                if (isz == sz)
+                        info2() << "Input filesize " << isz << "==" << sz << " output filesize";
+                else
+                        error() << "Input filesize " << isz << "!=" << sz << " output filesize";
+
+                info() << "Checking is file sorted...";
+
+                chunk_istream_iterator<CONFIG_DATA_TYPE> beg(res_is), end;
+                if (std::is_sorted(beg, end))
+                        info() << "File is sorted";
+                else
+                        error() << "File is NOT sorted";
+        }
         else
-                error() << "Input filesize " << isz << "!=" <<sz<<" output filesize";
+        {
+                hash_value<8> hash(crc64_from_file(CONFIG_OUTPUT_FILENAME));
 
-        info() << "Checking is file sorted...";
+                auto data = file_read_all(CONFIG_ORIGIN_HASH_FILENAME);
+                hash_value<8> origin_hash(&data[0]);
 
-        chunk_istream_iterator<CONFIG_DATA_TYPE> beg(res_is), end;
-        if(std::is_sorted(beg, end))
-                info() << "File is sorted";
-        else
-                error() << "File is NOT sorted";
+                if (hash == origin_hash)
+                        info() << "File is sorted";
+                else
+                        error() << "File is NOT sorted origin hash "
+                        << origin_hash << " output hash " << hash;
+        }
 }
 
 void print_result()
 {
-        chunk_istream<CONFIG_DATA_TYPE> is(CONFIG_OUTPUT_FILENAME);
-        is.open(CONFIG_MEM_AVAIL);
+        chunk_istream<CONFIG_DATA_TYPE> is;
+        is.open(CONFIG_OUTPUT_FILENAME, CONFIG_MEM_AVAIL);
 
         chunk_istream_iterator<CONFIG_DATA_TYPE> beg(is), end;
 
-        std::cout << "Result [";
-        std::copy(beg, end, std::ostream_iterator<CONFIG_DATA_TYPE>(std::cout, " "));
-        std::cout << "]" << std::endl;
+        std::stringstream ss;
+
+        ss << "Result [";
+        std::copy(beg, end, std::ostream_iterator<CONFIG_DATA_TYPE>(ss, " "));
+        ss << "]" << std::endl;
+
+        info() << ss.rdbuf();
 }
 
 void make_test_file()
 {
-        switch(CONFIG_TEST_FILE_TYPE)
+        static_assert(!(CONFIG_TEST_FILE_TYPE == CONFIG_TEST_FILE_RANDOM && CONFIG_CHECK_HASH),
+                "CONFIG_TEST_FILE_RANDOM and CONFIG_CHECK_HASH cannot be used together");
+
+        switch (CONFIG_TEST_FILE_TYPE)
         {
-                case CONFIG_TEST_FILE_SHUFFLE:
-                {
-                        std::vector<CONFIG_DATA_TYPE> arr(CONFIG_TEST_FILE_SIZE
-                                                          / sizeof(CONFIG_DATA_TYPE));
+        case CONFIG_TEST_FILE_SHUFFLE:
+        {
+                using logging::fmt_clear;
+                using logging::fmt_set;
+                using logging::fmt;
 
-                        CONFIG_DATA_TYPE i = CONFIG_DATA_TYPE();
+                info2() << "Generating " << size_format(CONFIG_TEST_FILE_SIZE) << " test data..";
 
-                        for(auto& v : arr)
-                                v = i++;
+                std::vector<CONFIG_DATA_TYPE> arr(CONFIG_TEST_FILE_SIZE
+                        / sizeof(CONFIG_DATA_TYPE));
 
-                        make_rnd_file_from(arr, CONFIG_INPUT_FILENAME);
-                        break;
-                }
+                auto i = CONFIG_DATA_TYPE();
 
-                case CONFIG_TEST_FILE_RANDOM:
-                {
-                        gen_rnd_test_file(CONFIG_INPUT_FILENAME,
-                                          CONFIG_TEST_FILE_SIZE);
-                        break;
-                }
+                for (auto& v : arr)
+                        v = i++;
 
-                default:
-                        throw_exception("Unknown test file type");
+                info2() << "Computing hash of test data..." << fmt_clear(fmt::endl);
+
+                hasher_crc64 hasher;
+                hasher.put(arr);
+                auto hash = hasher.hash();
+
+                info2() << fmt_set(fmt::append) << ": " << hash;
+
+                file_write(CONFIG_ORIGIN_HASH_FILENAME, hash.data(), hash.size());
+
+                info2() << "Writing test file...";
+
+                make_rnd_file_from(arr, CONFIG_INPUT_FILENAME);
+                break;
+        }
+
+        case CONFIG_TEST_FILE_RANDOM:
+        {
+                gen_rnd_test_file(CONFIG_INPUT_FILENAME,
+                        CONFIG_TEST_FILE_SIZE);
+                break;
+        }
+
+        default:
+                throw_exception("Unknown test file type");
         }
 }
 
-int main()
+void init_enviroment()
+{
+        if (!check_dir_exist(CONFIG_CHUNK_DIR))
+                create_directory(CONFIG_CHUNK_DIR);
+}
+
+int main(int argc, char** argv)
 try
 {
-        logger::enable_file_logging("external_sort.log");
+        logging::logger::enable_file_logging("external_sort.log");
 
-        if(IS_ENABLED(CONFIG_GENERATE_TEST_FILE))
-                perf_timer("Test file generating", &make_test_file);
+        init_enviroment();
+
+        std::string input_filename = CONFIG_INPUT_FILENAME;
+
+        if (IS_ENABLED(CONFIG_GENERATE_TEST_FILE))
+        {
+                perf_timer("Test file generating:", &make_test_file);
+        }
+        else if (argc > 1)
+                input_filename = argv[1];                
+        
 
         using data_t = CONFIG_DATA_TYPE;
 
-        raw_file_reader rfr_(CONFIG_INPUT_FILENAME);
+        raw_file_reader rfr_(input_filename);
 
         size_t threads_n = get_thread_number();
 
-        uint64_t isz  = rfr_.file_size();
+        uint64_t input_filesize  = rfr_.file_size();
         uint64_t ncpu = threads_n;
-        uint64_t ram  = CONFIG_MEM_AVAIL;
-        uint64_t tram = ram / ncpu;
-        uint64_t cs0  = tram;
+        uint64_t mem_avail  = CONFIG_MEM_AVAIL;
+        uint64_t thr_mem = mem_avail / ncpu;
+        uint64_t l0_chunk_size  = thr_mem;
 
-        if(ram >= isz)
-                cs0 = isz / (threads_n * 2);
+        if(mem_avail >= input_filesize)
+                l0_chunk_size = input_filesize / (threads_n * 2);
 
-        uint64_t cn   = isz / cs0;
-        uint32_t nmrg = get_nway_merge_n(cn);
+        uint64_t chunk_number   = input_filesize / l0_chunk_size;
+        uint32_t merge_n = get_nway_merge_n(chunk_number);
 
-        // 2-way is min requirement
-        nmrg = nmrg <= 1 ? 2 : nmrg;
+        /* 2-way is a minimum requirement */
+        merge_n = merge_n <= 1 ? 2 : merge_n;
 
-        float ior  = CONFIG_IO_BUFF_RATIO;
-        uint64_t ibsz = static_cast<uint64_t>(tram * ior / (float)nmrg);
-        uint64_t obsz = static_cast<uint64_t>(tram * (1.0f - ior));
+        float io_ratio  = CONFIG_IO_BUFF_RATIO;
+        auto input_buff_size = static_cast<uint64_t>(thr_mem * io_ratio / (float)merge_n);
+        auto output_buff_size = static_cast<uint64_t>(thr_mem * (1.0f - io_ratio));
 
-        ibsz = round_up(ibsz, (uint64_t)sizeof(data_t));
-        obsz = round_up(obsz, (uint64_t)sizeof(data_t));
+        input_buff_size = round_up(input_buff_size, sizeof(data_t));
+        output_buff_size = round_up(output_buff_size, sizeof(data_t));
 
-        size_t chunk_size = cs0;
-        size_t in_buff_size = ibsz;
-        size_t out_buff_size = obsz;
-        size_t n_way_merge = nmrg;
-
-
-        info() << "Input Filename: " << CONFIG_INPUT_FILENAME;
+        info() << "Input Filename: " << input_filename;
         info() << "Output Filename: " << CONFIG_OUTPUT_FILENAME;
-        info() << "Input Filesize: " << size_format(isz);
+        info() << "Input Filesize: " << size_format(input_filesize);
         info() << "Threads : " << threads_n;
-        info() << "MEM Available: " << size_format(ram);
-        info() << "MEM Per Thread: " << size_format(tram);
-        info() << "MEM IO Ratio: " << ior;
-        info() << "K-way Merge Size: " << n_way_merge;
-        info() << "IChunk Buff Size: " << size_format(in_buff_size);
-        info() << "OChunk Buff Size: " << size_format(out_buff_size);
-        info() << "L0 Chunk Size: " << size_format(cs0);
-        info() << "L0 Chunk Count: " << num_format(cn);
+        info() << "MEM Available: " << size_format(mem_avail);
+        info() << "MEM Per Thread: " << size_format(thr_mem);
+        info() << "MEM IO Ratio: " << io_ratio;
+        info() << "K-way Merge Size: " << merge_n;
+        info() << "IChunk Buff Size: " << size_format(input_buff_size);
+        info() << "OChunk Buff Size: " << size_format(output_buff_size);
+        info() << "L0 Chunk Size: " << size_format(l0_chunk_size);
+        info() << "L0 Chunk Count: " << num_format(chunk_number);
 
-        processor<data_t> pcr(std::move(rfr_),
-                              chunk_size, n_way_merge, 
+        /*check constraits */
+        if (input_buff_size < sizeof(data_t))
+                throw_exception("Input buffer size is too small = " 
+                                << size_format(input_buff_size));
+
+        if (output_buff_size < sizeof(data_t))
+                throw_exception("Output buffer size is too small = "
+                        << size_format(output_buff_size));
+
+        /* main unit in the programm */
+        pipeline_controller<data_t> controller(
+                              std::move(rfr_),
+                              l0_chunk_size, merge_n, 
                               (uint32_t)threads_n, 
-                              ram, 
-                              ior,
-                              CONFIG_OUTPUT_FILENAME);
+                              mem_avail, 
+                              io_ratio,
+                              CONFIG_OUTPUT_FILENAME
+        );
 
-        perf_timer("Finished for", [&pcr](){
-                pcr.run();
+        perf_timer("Finished for", [&controller](){
+                controller.run();
         });
 
+        if (IS_ENABLED(CONFIG_PRINT_RESULT))
+                print_result();
 
         if(IS_ENABLED(CONFIG_CHECK_RESULT))
-                check_result(isz);
+                check_result(input_filesize);
 
-        if(IS_ENABLED(CONFIG_PRINT_RESULT))
-                print_result();
+        if (IS_ENABLED(CONFIG_REMOVE_RESULT))
+                delete_file(CONFIG_OUTPUT_FILENAME);
 
         return EXIT_SUCCESS;
 }

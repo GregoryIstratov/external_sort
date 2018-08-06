@@ -1,5 +1,5 @@
 #include "exception.hpp"
-#include "log.hpp" // get_thread_id_str()
+#include "util.hpp"
 
 __myexception::__myexception(const char* msg, const char* file, const char* fun, int line)
 {

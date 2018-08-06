@@ -1,9 +1,11 @@
 #pragma once
 
 #include <algorithm>
-#include <map>
-#include "chunk.hpp"
-#include "util.hpp"
+#include <utility>
+#include "tools/file.hpp"
+#include "tools/perf_timer.hpp"
+#include "tools/format.hpp"
+#include "chunk/chunk_istream.hpp"
 
 template<typename T>
 class chunk_sort_task
@@ -13,7 +15,7 @@ public:
 
         explicit
         chunk_sort_task(std::vector<T>&& data, chunk_id id)
-                : data_(std::move(data)), id_(id)
+                : data_(std::move(data)), id_(std::move(id))
         {}
 
         chunk_sort_task(chunk_sort_task&&) noexcept = default;
@@ -21,18 +23,18 @@ public:
 
         void execute()
         {
-                perf_timer tm_;
+                perf_timer tm;
 
-                tm_.start();
+                tm.start();
 
                 sort();
 
-                tm_.end();
+                tm.end();
 
-                info2() << "sorted " << make_filename(id_)
+                info2() << "sorted " << id_
                         << " (" << size_format(size())
                         << "/" << num_format(count()) << ") for "
-                        << tm_.elapsed<perf_timer::ms>() << " ms";
+                        << tm.elapsed<perf_timer::ms>() << " ms";
         }
 
         void release()
@@ -87,12 +89,12 @@ class chunk_merge_task
 public:
         chunk_merge_task() = default;
 
-        chunk_merge_task(std::vector<chunk_istream<T>>&& _input,
-                         chunk_ostream<T>&& _output,
-                         chunk_id _output_id)
-                : input(std::move(_input)),
-                  output(std::move(_output)),
-                  output_id(_output_id)
+        chunk_merge_task(std::vector<chunk_istream<T>>&& input,
+                         chunk_ostream<T>&& output,
+                         chunk_id output_id)
+                : input_(std::move(input)),
+                  output_(std::move(output)),
+                  output_id_(std::move(output_id))
         {
         }
 
@@ -101,13 +103,13 @@ public:
 
         void execute(size_t in_buff_size, size_t out_buff_size)
         {
-                perf_timer tm_;
-                tm_.start();
+                perf_timer tm;
+                tm.start();
 
                 if(IS_ENABLED(CONFIG_REMOVE_TMP_FILES))
                         make_remove_queue();
 
-                size_t ick_mem = round_down(in_buff_size/input.size(), sizeof(T));
+                size_t ick_mem = round_down(in_buff_size/input_.size(), sizeof(T));
                 size_t ock_mem = round_down(out_buff_size, sizeof(T));
 
                 if(!ick_mem || !ock_mem)
@@ -117,70 +119,70 @@ public:
                                                               << ock_mem
                                                               << "]");
 
-                for(auto& is : input)
+                for(auto& is : input_)
                         is.open(ick_mem);
 
-                output.open(ock_mem);
+                output_.open(ock_mem);
 
                 if(CONFIG_INFO_LEVEL >= 2)
                 {
                         ss_ << "Merged { ";
-                        for(const auto& k : input)
-                                ss_ << k.filename() << " ("
+                        for(const auto& k : input_)
+                                ss_ << k.id() << " ("
                                     << size_format(k.buff_size())
                                     << "/" << size_format(k.size())
                                     << "/" << num_format(k.count()) << ") ";
                 }
 
-                if (input.size() == 2)
+                if (input_.size() == 2)
                         two_way_merge();
                 else
                         pq_merge();
 
-                output.close();
+                output_.close();
 
                 if(IS_ENABLED(CONFIG_REMOVE_TMP_FILES))
                         remove_tmp_files();
 
                 if(CONFIG_INFO_LEVEL >= 2)
                 {
-                        tm_.end();
+                        tm.end();
 
-                        ss_ << " } -> { " << make_filename(id()) << " ("
-                            << size_format(output.buff_size()) << ")"
-                            << " } for " << tm_.elapsed<perf_timer::ms>() << " ms";
+                        ss_ << " } -> { " << id() << " ("
+                            << size_format(output_.buff_size()) << ")"
+                            << " } for " << tm.elapsed<perf_timer::ms>() << " ms";
                 }
 
         }
 
         std::string debug_str() const { return ss_.str(); }
 
-        chunk_id id() const { return output_id; }
+        chunk_id id() const { return output_id_; }
 
         void set_output_filename(const std::string& value)
         {
-                output.filename(value);
+                output_.filename(value);
         }
 
         void release()
         {
-                input = decltype(input)();
-                output = decltype(output)();
+                input_ = decltype(input_)();
+                output_ = decltype(output_)();
         }
 
 private:
 
         void make_remove_queue()
         {
-                for(auto& is : input)
-                        remove_que_.push_back(is.filename());
+                for(auto& is : input_)
+                        remove_que_.push_back(is.id().to_full_filename());
 
         }
 
         void remove_tmp_files()
         {
                 // closes all files
-                input = decltype(input)();
+                input_ = decltype(input_)();
 
                 for(const auto& filename : remove_que_)
                 {
@@ -198,7 +200,7 @@ private:
 
         void copy_to_output(chunk_istream<T>& is)
         {
-                is.copy_to(output);
+                is.copy_to(output_);
         }
 
 
@@ -208,20 +210,36 @@ private:
                 T value;                
                 chunk_istream<T>* is;
 
-                friend static bool operator<(const heap_item& a, const heap_item& b)
+
+                friend bool operator!=(const heap_item& a, const heap_item& b)
+                {
+                        return a.value != b.value;
+                }
+
+                friend bool operator<(const heap_item& a, const heap_item& b)
                 {
                         return a.value > b.value;
                 }
+
+                friend bool operator>(const heap_item& a, const heap_item& b)
+                {
+                        return a.value < b.value;
+                }
         };
-        
+
         void pq_merge()
         {
-                std::vector<heap_item> heap(input.size());
+                pq_merge_std();
+        }
+        
+        void pq_merge_std()
+        {
+                std::vector<heap_item> heap(input_.size());
 
-                for (uint32_t i = 0; i < input.size(); ++i)
+                for (uint32_t i = 0; i < input_.size(); ++i)
                 {
-                        heap[i].value = input[i].value();
-                        heap[i].is = &input[i];
+                        heap[i].value = input_[i].value();
+                        heap[i].is = &input_[i];
                 }
 
                 std::make_heap(heap.begin(), heap.end());
@@ -230,14 +248,16 @@ private:
                         std::pop_heap(heap.begin(), heap.end());
 
                         T v = heap.back().value;
-                        output.put(v);
+                        output_.put(v);
 
                         if (heap.back().is->next())
+                        {
                                 heap.back().value = heap.back().is->value();
+                                std::push_heap(heap.begin(), heap.end());
+                        }
                         else
                                 heap.pop_back();
-
-                        std::push_heap(heap.begin(), heap.end());
+                        
 
                         if (heap.size() == 1)
                         {
@@ -251,41 +271,33 @@ private:
         {
                 for (;;)
                 {
-                        auto a = input[0].value();
-                        auto b = input[1].value();
+                        auto a = input_[0].value();
+                        auto b = input_[1].value();
 
                         if (a < b)
                         {
-                                output.put(a);
-                                if (!input[0].next()) {
-                                        copy_to_output(input[1]);
+                                output_.put(a);
+                                if (!input_[0].next()) {
+                                        copy_to_output(input_[1]);
                                         return;
                                 }
 
                         }
-                        else if (b < a)
+                        else if (b <= a)
                         {
-                                output.put(b);
-                                if (!input[1].next()) {
-                                        copy_to_output(input[0]);
+                                output_.put(b);
+                                if (!input_[1].next()) {
+                                        copy_to_output(input_[0]);
                                         return;
                                 }
 
-                        }
-                        else
-                        {
-                                output.put(a);
-                                if (!input[0].next()) {
-                                        copy_to_output(input[1]);
-                                        return;
-                                }
                         }
                 }
         }
 private:
-        std::vector<chunk_istream<T>> input;
-        chunk_ostream<T> output;
-        chunk_id output_id;
+        std::vector<chunk_istream<T>> input_;
+        chunk_ostream<T> output_;
+        chunk_id output_id_;
 
         std::stringstream ss_;
 

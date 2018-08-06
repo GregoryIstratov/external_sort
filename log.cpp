@@ -1,5 +1,8 @@
 #include "log.hpp"
 
-std::mutex logger::mtx_;
+namespace logging {
 
-std::ofstream logger::fos_;
+        std::mutex logger::mtx_;
+        spinlock logger::spinlock_;
+        std::ofstream logger::fos_;
+}
