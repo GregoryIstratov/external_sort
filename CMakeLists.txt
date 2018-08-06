@@ -51,4 +51,5 @@ add_executable(external_sort main.cpp
                              chunk/chunk_istream.hpp
                              chunk/chunk_ostream.hpp
                              )
-#target_link_libraries(external_sort pthread)
+
+target_link_libraries(external_sort Threads::Threads)
