@@ -15,8 +15,7 @@ struct chunk_id
                 : lvl(_lvl), id(_id)
         {}
 
-        explicit
-                chunk_id(const char* name)
+        explicit chunk_id(const char* name)
         {
                 const char* name_end = name + std::strlen(name);
 

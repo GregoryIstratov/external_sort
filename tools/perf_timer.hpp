@@ -12,7 +12,7 @@ public:
 
         perf_timer() = default;
 
-        perf_timer(const char* msg, std::function<void()>&& fn)
+        perf_timer(const char* const msg, std::function<void()>&& fn)
         {
                 using std::chrono::duration_cast;
                 using std::chrono::milliseconds;
@@ -84,6 +84,6 @@ private:
         perf_timer tm_;
         uint64_t total_ns_ = 0;
         uint64_t calls_n_ = 0;
-        const char* msg_literal_;
+        const char* const msg_literal_;
 };
 

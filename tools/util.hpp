@@ -4,18 +4,45 @@
 #include <iomanip>
 #include <sstream>
 
-#define IS_ENABLED(option) (option)
+template<typename T>
+constexpr void set_flag(T* x, T flag)
+{
+        static_assert(std::is_enum<T>::value || std::is_trivial<T>::value,
+                "T must be enum or trivial");
+
+        *x = *x | flag;
+}
+
+template<typename T>
+constexpr bool test_flag(T x, T flag)
+{
+        static_assert(std::is_enum<T>::value || std::is_trivial<T>::value,
+                "T must be enum or trivial");
+
+        return static_cast<bool>(x & flag);
+}
+
+template<typename T>
+constexpr void clear_flag(T* x, T flag)
+{
+        static_assert(std::is_enum<T>::value || std::is_trivial<T>::value,
+                "T must be enum or trivial");
+
+        *x = *x & (~flag);
+}
 
 inline
 std::string get_thread_id_str()
 {
         static const auto flags = std::ios_base::hex
-                | std::ios_base::uppercase
-                | std::ios_base::showbase;
+                | std::ios_base::uppercase;
 
         std::stringstream ss;
         ss << std::resetiosflags(std::ios_base::dec)
+                << "0x"
                 << std::setiosflags(flags)
+                << std::setfill('0')
+                << std::setw(sizeof(size_t) * 2)
                 << std::this_thread::get_id();
 
         return ss.str();

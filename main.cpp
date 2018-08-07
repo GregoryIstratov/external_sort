@@ -72,6 +72,7 @@
 #include <type_traits>
 #include <iterator>
 
+#include "config.hpp"
 #include "task.hpp"
 #include "pipeline/pipeline_controller.hpp"
 #include "log.hpp"
@@ -98,7 +99,7 @@ uint32_t get_nway_merge_n(uint64_t cn)
         if(IS_ENABLED(CONFIG_N_WAY_FLAT))
                 return (uint32_t)cn;
 
-        if(IS_ENABLED(CONFIG_N_WAY_MERGE_N))
+        if(CONFIG_N_WAY_MERGE_N > 0)
                 return (uint32_t)CONFIG_N_WAY_MERGE_N;
 
         return (uint32_t)std::round(solve_merge_n_eq2((float)cn,
@@ -163,7 +164,7 @@ void print_result()
 void make_test_file()
 {
         static_assert(!(CONFIG_TEST_FILE_TYPE == CONFIG_TEST_FILE_RANDOM
-                        && CONFIG_CHECK_HASH),
+                        && IS_ENABLED(CONFIG_CHECK_HASH)),
                 "CONFIG_TEST_FILE_RANDOM and CONFIG_CHECK_HASH"
                 " cannot be used together");
 
@@ -240,11 +241,11 @@ try
 
         using data_t = CONFIG_DATA_TYPE;
 
-        raw_file_reader rfr_(input_filename);
+        raw_file_reader input_fr(input_filename);
 
         size_t threads_n = get_thread_number();
 
-        uint64_t input_filesize  = rfr_.file_size();
+        uint64_t input_filesize  = input_fr.file_size();
         uint64_t ncpu = threads_n;
         uint64_t mem_avail  = CONFIG_MEM_AVAIL;
         uint64_t thr_mem = mem_avail / ncpu;
@@ -292,7 +293,7 @@ try
 
         /* main unit in the program */
         pipeline_controller<data_t> controller(
-                              std::move(rfr_),
+                              std::move(input_fr),
                               l0_chunk_size, merge_n, 
                               (uint32_t)threads_n, 
                               mem_avail, 

@@ -63,7 +63,7 @@ private:
                                 break;
 
                         default:
-                                return;
+                                throw_exception("Unknown option");
                 }
         }
 

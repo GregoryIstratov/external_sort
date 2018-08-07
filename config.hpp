@@ -6,6 +6,24 @@
 #include <cstddef>
 #include "tools/literals.hpp"
 
+class config_option
+{
+public:
+        explicit 
+        constexpr config_option(bool enabled) 
+        : enabled_(enabled) {}
+
+        friend static constexpr bool IS_ENABLED(config_option option)
+        {
+                return option.enabled_;
+        }
+private:
+        const bool enabled_;
+};
+
+static constexpr config_option Enabled(true);
+static constexpr config_option Disabled(false);
+
 /******************************************************************************
 * COMMON SECTION
 *****************************************************************************/
@@ -24,7 +42,7 @@ static constexpr const char* CONFIG_OUTPUT_FILENAME = "output";
 static constexpr const char  CONFIG_CHUNK_NAME_SEP = '_';
 static constexpr const char* CONFIG_CHUNK_DIR = "chunks";
 
-#define CONFIG_REMOVE_TMP_FILES 0
+static constexpr config_option CONFIG_REMOVE_TMP_FILES = Enabled;
 
 /******************************************************************************
 * SORT SECTION
@@ -42,10 +60,10 @@ static constexpr int CONFIG_SORT_ALGO = CONFIG_SORT_STD;
 * MERGE SECTION
 *****************************************************************************/
 
-#define CONFIG_N_WAY_FLAT 1
+static constexpr auto CONFIG_N_WAY_FLAT = Enabled;
 
 /* 0 - auto, n > 2 = n */
-#define CONFIG_N_WAY_MERGE_N 2
+static constexpr int CONFIG_N_WAY_MERGE_N = 0;
 
 static constexpr int CONFIG_TREE_HEIGH = 2;
 
@@ -65,30 +83,30 @@ static constexpr float CONFIG_IO_BUFF_RATIO = 0.5f;
 * LOG SECTION
 *****************************************************************************/
 
-#define CONFIG_FORCE_DEBUG 0
+static constexpr auto CONFIG_FORCE_DEBUG = Disabled;
 
-#define CONFIG_PERF_MEASURE_GET_NEXT_SORT_TASK 0
+static constexpr auto CONFIG_PERF_MEASURE_GET_NEXT_SORT_TASK = Disabled;
 
-#define CONFIG_INFO_LEVEL 2
+static constexpr int CONFIG_INFO_LEVEL = 2;
 
 
 /******************************************************************************
  * TEST SECTION
  *****************************************************************************/
 
-#define CONFIG_SKIP_SORT 0
+static constexpr auto CONFIG_SKIP_SORT = Disabled;
 
-#define CONFIG_REMOVE_RESULT 1
+static constexpr auto CONFIG_REMOVE_RESULT = Enabled;
 
-#define CONFIG_CHECK_RESULT 1
+static constexpr auto CONFIG_CHECK_RESULT = Enabled;
 
-#define CONFIG_CHECK_HASH 1
+static constexpr auto CONFIG_CHECK_HASH = Enabled;
 
 static constexpr const char* CONFIG_ORIGIN_HASH_FILENAME = "origin.hash";
 
-#define CONFIG_PRINT_RESULT 0
+static constexpr auto CONFIG_PRINT_RESULT = Disabled;
 
-#define CONFIG_GENERATE_TEST_FILE 1
+static constexpr auto CONFIG_GENERATE_TEST_FILE = Enabled;
 
 enum
 {

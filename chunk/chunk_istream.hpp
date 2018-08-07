@@ -149,18 +149,18 @@ template<typename T>
 class chunk_istream_iterator
         : public std::iterator<std::input_iterator_tag, T, ptrdiff_t, const T*, const T&>
 {
-        friend class chunk_istream<T>;
 public:
+        
         explicit
                 chunk_istream_iterator(chunk_istream<T>& p)
         {
                 if (p.eof())
-                        p_ = (chunk_istream<T>*)~0;
+                        p_ = (chunk_istream<T>*)(uintptr_t) - 1;
                 else
                         p_ = &p;
         }
         chunk_istream_iterator()
-                : p_((chunk_istream<T>*)~0)
+                : p_((chunk_istream<T>*)(uintptr_t) - 1)
         {
         }
 
@@ -187,11 +187,13 @@ public:
         {
                 if (!p_->next())
                 {
-                        p_ = (chunk_istream<T>*)~0;
+                        p_ = (chunk_istream<T>*)(uintptr_t) - 1;
                 }
 
                 return *this;
         }
 private:
+        friend class chunk_istream<T>;
+
         chunk_istream<T>* p_;
 };

@@ -62,51 +62,30 @@ struct fmt_clear
         fmt value;
 };
 
-template<typename T>
-constexpr bool test_flag(T x, T flag)
-{
-        static_assert(std::is_enum<T>::value || std::is_trivial<T>::value, 
-                "type of T must be enum or trivial");
-
-        return static_cast<bool>(x & flag);
-}
-
-template<typename T>
-constexpr void clear_flag(T* x, T flag)
-{
-        static_assert(std::is_enum<T>::value || std::is_trivial<T>::value,
-                "type of T must be enum or trivial");
-
-        *x = *x & (~flag);
-}
-
 static constexpr auto default_log_format = fmt::endl | fmt::clock
                                            | fmt::time | fmt::thread;
 
 class logger
 {
 public:
+        logger() = delete;
+
         ~logger()
         {
                 try
                 {
+                        if (test_flag(fmt_, fmt::endl))
+                                oss_ << "\n";
+
                         std::lock_guard<std::mutex> lk(mtx_);
 
-                        //auto s = oss_.str();
                         if (fos_.is_open())
-                        {
-                                fos_ << oss_.rdbuf();
-
-                                if (test_flag(fmt_, fmt::endl))
-                                        fos_ << std::endl;
-                        }
+                                fos_ << oss_.rdbuf();                        
 
                         oss_.seekg(0);
 
                         os_ << oss_.rdbuf();
-
-                        if (test_flag(fmt_, fmt::endl))
-                                os_ << std::endl;
+                        os_ << std::flush;
                 }
                 catch (const std::exception& e)
                 {
@@ -115,7 +94,7 @@ public:
                 }
                 catch (...)
                 {
-                        std::cerr << "Caught unknown exception in ~logger(): " 
+                        std::cerr << "Caught unknown exception in ~logger()" 
                                   << std::endl;
                 }
         }
@@ -138,6 +117,7 @@ public:
                                         << strerror(errno));
         }
 
+
 protected:
         explicit
         logger(const char* const type, std::ostream& os = std::cout)
@@ -145,6 +125,7 @@ protected:
         {
         }
 
+private:
         void _print_time()
         {
                 std::time_t t = std::time(nullptr);
@@ -173,18 +154,6 @@ protected:
                 oss_ << "[" << get_thread_id_str() << "]";
         }
 
-protected:
-        static std::mutex mtx_;
-        static spinlock spinlock_;
-
-        const char* const type_;
-
-        std::ostream& os_;
-        std::stringstream oss_;       
-
-        fmt fmt_ = default_log_format;
-
-private:
         void _init()
         {
                 init_ = true;
@@ -206,7 +175,7 @@ private:
 
         friend logger&& operator<<(logger&& _log, fmt_set fmt)
         {
-                _log.fmt_ = _log.fmt_ | fmt.value;
+                set_flag(&_log.fmt_, fmt.value);
 
                 return std::move(_log);
         }
@@ -219,23 +188,31 @@ private:
         }
 
         template<typename T>
-        friend logger&& operator<<(logger&& _log, T&& v);
+        friend logger&& operator<<(logger&& _log, T&& v)
+        {
+                if (!_log.init_)
+                        _log._init();
+
+                _log.oss_ << v;
+                return std::move(_log);
+        }
 
 private:
-        bool init_ = false;
-
+        static std::mutex mtx_;
+        static spinlock spinlock_;
         static std::ofstream fos_;
+
+        const char* const type_;
+
+        std::ostream& os_;
+        std::stringstream oss_;
+
+        fmt fmt_ = default_log_format;
+
+        bool init_ = false;        
 };
 
-template<typename T>
-logger&& operator<<(logger&& _log, T&& v)
-{
-        if (!_log.init_)
-                _log._init();
 
-        _log.oss_ << v;
-        return std::move(_log);
-}
 
 class info : public logger
 {
