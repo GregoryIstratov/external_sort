@@ -46,6 +46,12 @@ using CONFIG_DATA_TYPE = uint32_t;
 /* Number of threads if hardware_concurrency() fails */
 constexpr size_t CONFIG_DEFAULT_THREAD_NUMBER = 2;
 
+#if defined(BOOST_FOUND)
+constexpr auto CONFIG_BOOST = config::ON;
+#else
+constexpr auto CONFIG_BOOST = config::OFF;
+#endif
+
 /******************************************************************************
 * FILE SECTION
 *****************************************************************************/
