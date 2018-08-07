@@ -56,11 +56,11 @@ void delete_file(const char* filename)
         }
 }
 
-void iterate_dir(const char* dir, std::function<void(const char*)>&& callback)
+void iterate_dir(const char* path, std::function<void(const char*)>&& callback)
 {
         std::list<std::string> names;
 
-        std::string search_path = dir;
+        std::string search_path = path;
         search_path += "/*.*";
 
         WIN32_FIND_DATA fd;
@@ -82,15 +82,15 @@ void iterate_dir(const char* dir, std::function<void(const char*)>&& callback)
         else
         {
                 throw_exception("Failed to read directory '"
-                        << dir
+                        << path
                         << "': "
                         << win_error_string()(GetLastError()));
         }
 }
 
-bool check_dir_exist(const char* dir)
+bool check_dir_exist(const char* path)
 {
-        DWORD dw_attrib = GetFileAttributesA(dir);
+        DWORD dw_attrib = GetFileAttributesA(path);
 
         return (dw_attrib != INVALID_FILE_ATTRIBUTES &&
                 (dw_attrib & FILE_ATTRIBUTE_DIRECTORY));
@@ -104,28 +104,83 @@ void create_directory(const char* name)
 
 #else
 
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
 void delete_file(const char* filename)
 {
         if (std::remove(filename) != 0)
                 throw std::runtime_error(strerror(errno));
 }
 
-std::vector<std::string> get_file_list(std::string dir)
+void iterate_dir(const char* path, std::function<void(const char*)>&& callback)
 {
-        throw_exception("Not implemented");
+        struct dir_guard
+        {
+                explicit
+                dir_guard(DIR* _dir) : p_dir(_dir) {}
+
+                ~dir_guard()
+                {
+                        if(p_dir) closedir(p_dir);
+                }
+
+                DIR* p_dir;
+        };
+
+        DIR* dir = opendir(path);
+        dirent* ent;
+
+        dir_guard guard(dir);
+
+        if(!dir)
+                throw_exception("Failed to open directory '"
+                                        << path
+                                        << "': "
+                                        << strerror(errno));
+
+
+        while((ent = readdir(dir)))
+        {
+                callback(ent->d_name);
+        }
 }
 
-bool check_dir_exist(const char* dir)
+bool check_dir_exist(const char* path)
 {
-        throw_exception("Not implemented");
+        DIR* dir = opendir(path);
+        if (dir)
+        {
+                closedir(dir);
+                return true;
+        }
+        else if (ENOENT == errno)
+        {
+                return false;
+        }
+        else
+        {
+                throw_exception("Error in checking die existance: "
+                                << strerror(errno));
+        }
 }
 
-void create_directory(const char* name)
+void create_directory(const char* path)
 {
-        throw_exception("Not implemented");
-}
-
+#if defined(_WIN32)
+        auto ret = mkdir(path);
+#else
+        mode_t mode = 0755;
+        auto ret = mkdir(path.c_str(), mode);
 #endif
+
+        if(ret != 0)
+                throw_exception("Failed to create directory '"
+                                << path << "': " << strerror(errno));
+}
+
+#endif // defined
 
 void gen_rnd_test_file(const char* filename, uint64_t size)
 {

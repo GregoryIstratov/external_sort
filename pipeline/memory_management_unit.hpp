@@ -16,9 +16,7 @@ public:
                 threads_n_(threads_n),
                 io_ratio_(io_ratio)
         {
-                mem_.imem = static_cast<size_t>(avail_mem_ * io_ratio / threads_n);
-                mem_.omem = static_cast<size_t>(avail_mem_ * (1.0f - io_ratio) / threads_n);
-                mem_.tmem = static_cast<size_t>(avail_mem_ / threads_n_);
+                _recalculate_memory();
         }
 
 
@@ -34,8 +32,16 @@ public:
                 if (threads_n_ == 0)
                         return;
 
-                mem_.imem = static_cast<size_t>(avail_mem_ * io_ratio_ / threads_n_);
-                mem_.omem = static_cast<size_t>(avail_mem_ * (1.0f - io_ratio_) / threads_n_);
+                _recalculate_memory();
+        }
+
+private:
+        void _recalculate_memory()
+        {
+                mem_.imem = static_cast<size_t>(avail_mem_ * io_ratio_
+                                                / threads_n_);
+                mem_.omem = static_cast<size_t>(avail_mem_ * (1.0f - io_ratio_)
+                                                / threads_n_);
                 mem_.tmem = static_cast<size_t>(avail_mem_ / threads_n_);
         }
 

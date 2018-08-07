@@ -11,7 +11,8 @@ public:
         hash_value() = default;
 
         template<typename T, typename = 
-                std::enable_if_t<!std::is_pointer<std::decay_t<T>>::value>>
+                typename std::enable_if<!std::is_pointer<
+                        typename std::decay<T>::type>::value>::type>
         explicit 
         hash_value(const T& value)
         {
@@ -26,7 +27,8 @@ public:
         }
 
         template<typename T, typename =
-                std::enable_if_t<!std::is_pointer<std::decay_t<T>>::value>>
+                typename std::enable_if<!std::is_pointer<
+                        typename std::decay<T>::type>::value>::type>
         void set(const T& value)
         {
                 static_assert(sizeof(T) == HashSize,
@@ -89,7 +91,7 @@ private:
 class hasher_crc64
 {
 public:
-        template<typename T, typename = std::enable_if_t<std::is_trivial_v<T>>>
+        template<typename T, typename = typename std::enable_if<std::is_trivial<T>::value>::type>
         void put(T value)
         {
                 hash_ = crc64(

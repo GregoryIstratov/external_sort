@@ -101,7 +101,9 @@ uint32_t get_nway_merge_n(uint64_t cn)
         if(IS_ENABLED(CONFIG_N_WAY_MERGE_N))
                 return (uint32_t)CONFIG_N_WAY_MERGE_N;
 
-        return (uint32_t)std::round(solve_merge_n_eq2((float)cn, CONFIG_TREE_HEIGH));
+        return (uint32_t)std::round(solve_merge_n_eq2((float)cn,
+                                                      CONFIG_TREE_HEIGH)
+        );
 }
 
 void check_result(uint64_t isz)
@@ -113,9 +115,11 @@ void check_result(uint64_t isz)
 
                 uint64_t sz = res_is.size();
                 if (isz == sz)
-                        info2() << "Input filesize " << isz << "==" << sz << " output filesize";
+                        info2() << "Input filesize " << isz << "=="
+                                << sz << " output filesize";
                 else
-                        error() << "Input filesize " << isz << "!=" << sz << " output filesize";
+                        error() << "Input filesize " << isz << "!="
+                                << sz << " output filesize";
 
                 info() << "Checking is file sorted...";
 
@@ -158,8 +162,10 @@ void print_result()
 
 void make_test_file()
 {
-        static_assert(!(CONFIG_TEST_FILE_TYPE == CONFIG_TEST_FILE_RANDOM && CONFIG_CHECK_HASH),
-                "CONFIG_TEST_FILE_RANDOM and CONFIG_CHECK_HASH cannot be used together");
+        static_assert(!(CONFIG_TEST_FILE_TYPE == CONFIG_TEST_FILE_RANDOM
+                        && CONFIG_CHECK_HASH),
+                "CONFIG_TEST_FILE_RANDOM and CONFIG_CHECK_HASH"
+                " cannot be used together");
 
         switch (CONFIG_TEST_FILE_TYPE)
         {
@@ -169,7 +175,8 @@ void make_test_file()
                 using logging::fmt_set;
                 using logging::fmt;
 
-                info2() << "Generating " << size_format(CONFIG_TEST_FILE_SIZE) << " test data..";
+                info2() << "Generating " << size_format(CONFIG_TEST_FILE_SIZE)
+                        << " test data..";
 
                 std::vector<CONFIG_DATA_TYPE> arr(CONFIG_TEST_FILE_SIZE
                         / sizeof(CONFIG_DATA_TYPE));
@@ -179,7 +186,8 @@ void make_test_file()
                 for (auto& v : arr)
                         v = i++;
 
-                info2() << "Computing hash of test data..." << fmt_clear(fmt::endl);
+                info2() << "Computing hash of test data..."
+                        << fmt_clear(fmt::endl);
 
                 hasher_crc64 hasher;
                 hasher.put(arr);
@@ -252,7 +260,9 @@ try
         merge_n = merge_n <= 1 ? 2 : merge_n;
 
         float io_ratio  = CONFIG_IO_BUFF_RATIO;
-        auto input_buff_size = static_cast<uint64_t>(thr_mem * io_ratio / (float)merge_n);
+        auto input_buff_size = static_cast<uint64_t>(thr_mem * io_ratio
+                                                     / (float)merge_n);
+
         auto output_buff_size = static_cast<uint64_t>(thr_mem * (1.0f - io_ratio));
 
         input_buff_size = round_up(input_buff_size, sizeof(data_t));
@@ -271,7 +281,7 @@ try
         info() << "L0 Chunk Size: " << size_format(l0_chunk_size);
         info() << "L0 Chunk Count: " << num_format(chunk_number);
 
-        /*check constraits */
+        /*check constrains */
         if (input_buff_size < sizeof(data_t))
                 throw_exception("Input buffer size is too small = " 
                                 << size_format(input_buff_size));
@@ -280,7 +290,7 @@ try
                 throw_exception("Output buffer size is too small = "
                         << size_format(output_buff_size));
 
-        /* main unit in the programm */
+        /* main unit in the program */
         pipeline_controller<data_t> controller(
                               std::move(rfr_),
                               l0_chunk_size, merge_n, 

@@ -5,6 +5,7 @@
 #include <vector>
 #include <random>
 #include <functional>
+#include <algorithm>
 
 #include "exception.hpp"
 #include "util.hpp"
@@ -12,9 +13,9 @@
 
 void delete_file(const char* filename);
 
-void iterate_dir(const char* dir, std::function<void(const char*)>&& callback);
+void iterate_dir(const char* path, std::function<void(const char*)>&& callback);
 
-bool check_dir_exist(const char* dir);
+bool check_dir_exist(const char* path);
 
 void create_directory(const char* name);
 

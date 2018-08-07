@@ -6,6 +6,8 @@
 #include <thread>
 #include <mutex>
 #include <ctime>
+#include <cstring>
+#include <type_traits>
 #include "config.hpp"
 #include "tools/exception.hpp"
 #include "tools/spinlock.hpp"
@@ -63,7 +65,7 @@ struct fmt_clear
 template<typename T>
 constexpr bool test_flag(T x, T flag)
 {
-        static_assert(std::is_enum_v<T> || std::is_trivial_v<T>, 
+        static_assert(std::is_enum<T>::value || std::is_trivial<T>::value, 
                 "type of T must be enum or trivial");
 
         return static_cast<bool>(x & flag);
@@ -72,13 +74,14 @@ constexpr bool test_flag(T x, T flag)
 template<typename T>
 constexpr void clear_flag(T* x, T flag)
 {
-        static_assert(std::is_enum_v<T> || std::is_trivial_v<T>,
+        static_assert(std::is_enum<T>::value || std::is_trivial<T>::value,
                 "type of T must be enum or trivial");
 
         *x = *x & (~flag);
 }
 
-static constexpr auto default_log_format = fmt::endl | fmt::clock | fmt::time | fmt::thread;
+static constexpr auto default_log_format = fmt::endl | fmt::clock
+                                           | fmt::time | fmt::thread;
 
 class logger
 {
@@ -152,7 +155,7 @@ protected:
                 std::tm tm = *std::localtime(&t);
                 lk.unlock();
 
-                oss_ << std::put_time(&tm, "[%T][%D]");
+                oss_ << std::put_time(&tm, "[%H:%M:%S][%m/%d/%y]");
         }
 
         void _print_clock()

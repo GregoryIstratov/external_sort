@@ -81,7 +81,8 @@ namespace format
         template<typename T, typename Case>
         std::string to_hex_string(T num, Case)
         {
-                static_assert(std::is_integral<T>::value, "T must be of an integral type");
+                static_assert(std::is_integral<T>::value,
+                              "T must be of an integral type");
 
                 // each byte can be represented as a 2 digit number in hex
                 constexpr size_t hex_digits = sizeof(T) * 2
@@ -89,7 +90,8 @@ namespace format
 
                 char buff[hex_digits + 1];
 
-                std::snprintf(buff, hex_digits, _hex_format_parameter<Case>::value, num);
+                std::snprintf(buff, hex_digits,
+                              _hex_format_parameter<Case>::value, num);
 
                 return std::string(buff);
         }

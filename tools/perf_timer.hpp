@@ -14,6 +14,9 @@ public:
 
         perf_timer(const char* msg, std::function<void()>&& fn)
         {
+                using std::chrono::duration_cast;
+                using std::chrono::milliseconds;
+
                 start();
 
                 fn();
@@ -21,7 +24,8 @@ public:
                 end();
 
                 info2() << msg << " "
-                        << std::chrono::duration_cast<std::chrono::milliseconds>(end_ - start_).count() << " ms";
+                        << duration_cast<milliseconds>(end_ - start_).count()
+                        << " ms";
         }
 
 

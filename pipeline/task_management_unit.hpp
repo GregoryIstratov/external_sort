@@ -36,7 +36,9 @@ public:
                                 return chunk_sort_task<T>();
                         }
 
-                        uint64_t read = fr_.read((char*)&buff[0], max_chunk_size_);
+                        uint64_t read = fr_.read(
+                                reinterpret_cast<char*>(&buff[0]),
+                                max_chunk_size_);
 
                         if (read != max_chunk_size_) {
                                 if (read == 0) {

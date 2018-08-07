@@ -35,8 +35,11 @@ T zero_move(T& o) noexcept
 template<typename A, typename B>
 A div_up(A a, B b)
 {
-        static_assert(std::is_integral<A>::value, "A must be of an integral type");
-        static_assert(std::is_integral<B>::value, "B must be of an integral type");
+        static_assert(std::is_integral<A>::value,
+                      "A must be of an integral type");
+
+        static_assert(std::is_integral<B>::value,
+                      "B must be of an integral type");
 
         return (a + b - 1) / b;
 }
@@ -44,8 +47,11 @@ A div_up(A a, B b)
 template<typename A, typename B>
 A round_up(A i, B mod)
 {
-        static_assert(std::is_integral<A>::value, "A must be of an integral type");
-        static_assert(std::is_integral<B>::value, "B must be of an integral type");
+        static_assert(std::is_integral<A>::value,
+                      "A must be of an integral type");
+
+        static_assert(std::is_integral<B>::value,
+                      "B must be of an integral type");
 
         return ((i + mod - 1) / mod) * mod;
 }
@@ -53,8 +59,11 @@ A round_up(A i, B mod)
 template<typename A, typename B>
 A round_down(A i, B mod)
 {
-        static_assert(std::is_integral<A>::value, "A must be of an integral type");
-        static_assert(std::is_integral<B>::value, "B must be of an integral type");
+        static_assert(std::is_integral<A>::value,
+                      "A must be of an integral type");
+
+        static_assert(std::is_integral<B>::value,
+                      "B must be of an integral type");
 
         return div_up(i - mod + 1, mod) * mod;
 }

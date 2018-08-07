@@ -1,17 +1,17 @@
 #pragma once
 #include <cstdint>
 
-constexpr uint64_t operator "" _KiB (uint64_t x)
+constexpr unsigned long long int operator "" _KiB( unsigned long long int v )
 {
-        return x * 1024;
+        return v * 1024;
 }
 
-constexpr uint64_t operator "" _MiB(uint64_t x)
+constexpr unsigned long long int operator "" _MiB( unsigned long long int x )
 {
         return x * 1024_KiB;
 }
 
-constexpr uint64_t operator "" _GiB(uint64_t x)
+constexpr unsigned long long int operator "" _GiB( unsigned long long int x )
 {
         return x * 1024_MiB;
 }

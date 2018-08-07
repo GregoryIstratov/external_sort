@@ -33,9 +33,10 @@ public:
                 if (std::rename(tmu_.result_id().to_full_filename().c_str(),
                         output_filename_.c_str()) != 0)
                 {
-                        throw_exception("Cannot rename '" << tmu_.result_id().to_full_filename()
-                                << "' to '" << output_filename_
-                                << "': " << strerror(errno));
+                        throw_exception("Cannot rename '"
+                                        << tmu_.result_id().to_full_filename()
+                                        << "' to '" << output_filename_
+                                        << "': " << strerror(errno));
                 }
         }
 

@@ -133,9 +133,11 @@ private:
                         chunk_ostream<T> os(std::move(name));
 
 
-                        new_node->task = std::make_unique<chunk_merge_task<T>>(std::move(chunks),
+                        new_node->task = std::make_unique<chunk_merge_task<T>>(
+                                std::move(chunks),
                                 std::move(os),
-                                output_id);
+                                output_id
+                        );
 
                         new_node->childs = std::move(childs);
 

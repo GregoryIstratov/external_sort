@@ -5,7 +5,9 @@
 
 class __myexception : public std::exception {
 public:
-        __myexception(const char* msg, const char* file, const char* fun, int line);
+        __myexception(const char* msg, const char* file,
+                      const char* fun, int line);
+
         const char* what() const noexcept override;
 private:
         std::string str_;

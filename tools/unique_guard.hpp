@@ -6,7 +6,8 @@ class unique_guard
 {
 public:
         explicit
-                unique_guard(std::unique_lock<MutexType>& lock, bool release_lock = true)
+                unique_guard(std::unique_lock<MutexType>& lock,
+                             bool release_lock = true)
                 : lock_(lock),
                 release_lock_(release_lock)
         {

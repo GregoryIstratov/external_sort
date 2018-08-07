@@ -95,10 +95,12 @@ private:
                                 return;
 
                         info2() << "Skipping sorting stage...";
-                        info2() << "Looking for chunks in directory '" << CONFIG_CHUNK_DIR << "'";
+                        info2() << "Looking for chunks in directory '"
+                                << CONFIG_CHUNK_DIR << "'";
 
                         std::list<chunk_id> id_list;
-                        iterate_dir(CONFIG_CHUNK_DIR, [&id_list](const char* filename) -> void
+                        iterate_dir(CONFIG_CHUNK_DIR,
+                        [&id_list](const char* filename) -> void
                         {
                                 info2() << "Found chunk '" << filename << "'";
 

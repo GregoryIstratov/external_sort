@@ -38,13 +38,16 @@ public:
         }
 
 private:
-        auto _next_task(std::unique_lock<std::mutex>& lock, task_management_unit<T>& tmu)
+        auto _next_task(std::unique_lock<std::mutex>& lock,
+                        task_management_unit<T>& tmu)
         {
                 if (IS_ENABLED(CONFIG_PERF_MEASURE_GET_NEXT_SORT_TASK))
                 {
                         decltype(tmu.next_sorting_task(lock)) task;
 
-                        perf_timer("Getting next sorting task", [&task, &lock, &tmu]() {
+                        perf_timer("Getting next sorting task",
+                        [&task, &lock, &tmu]()
+                        {
                                 task = tmu.next_sorting_task(lock);
                         });
 

@@ -57,7 +57,7 @@ static constexpr int CONFIG_TREE_HEIGH = 2;
 static constexpr size_t PAGE_SIZE = 4096;
 
 /* -x MiB for program itself and some part of each thread stack*/
-static constexpr size_t CONFIG_MEM_AVAIL = 10_MiB;
+static constexpr size_t CONFIG_MEM_AVAIL = 500_KiB;
 
 static constexpr float CONFIG_IO_BUFF_RATIO = 0.5f;
 
@@ -76,7 +76,7 @@ static constexpr float CONFIG_IO_BUFF_RATIO = 0.5f;
  * TEST SECTION
  *****************************************************************************/
 
-#define CONFIG_SKIP_SORT 1
+#define CONFIG_SKIP_SORT 0
 
 #define CONFIG_REMOVE_RESULT 1
 
@@ -88,7 +88,7 @@ static constexpr const char* CONFIG_ORIGIN_HASH_FILENAME = "origin.hash";
 
 #define CONFIG_PRINT_RESULT 0
 
-#define CONFIG_GENERATE_TEST_FILE 0
+#define CONFIG_GENERATE_TEST_FILE 1
 
 enum
 {
@@ -98,4 +98,4 @@ enum
 
 static constexpr int CONFIG_TEST_FILE_TYPE = CONFIG_TEST_FILE_SHUFFLE;
 
-static constexpr uint64_t CONFIG_TEST_FILE_SIZE = 500_MiB;
+static constexpr uint64_t CONFIG_TEST_FILE_SIZE = 5_MiB;

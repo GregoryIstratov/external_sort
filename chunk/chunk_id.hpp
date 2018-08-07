@@ -39,11 +39,13 @@ struct chunk_id
                 char* end;
                 lvl = (lvl_t)std::strtoull(lvl_s, &end, 16);
                 if (errno != 0 || end != lvl_s_end)
-                        throw_exception("Cannot convert '" << lvl_s << "' to an integer");
+                        throw_exception("Cannot convert '"
+                                        << lvl_s << "' to an integer");
 
                 id = (id_t)std::strtoull(id_s, &end, 16);
                 if (errno != 0 || end != name_end)
-                        throw_exception("Cannot convert '" << id_s << "' to an integer");
+                        throw_exception("Cannot convert '"
+                                        << id_s << "' to an integer");
         }
 
 
