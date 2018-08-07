@@ -226,45 +226,49 @@ public:
         error() : logger("ERR", std::cerr) {}
 };
 
-#if CONFIG_INFO_LEVEL >= 2
+template<bool Enabled>
+struct _info2;
 
-class info2 : public logger
+template<>
+struct _info2<true> : public logger
 {
-public:
-        info2() : logger("INF") {}
+        _info2() : logger("INF") {}
 };
 
-#else
-struct info2
-{
-};
+template<>
+struct _info2<false> {};
+
+using info2 = _info2<CONFIG_INFO_LEVEL >= 2>;
 
 template<typename T>
-info2&& operator<<(info2&& _log, const T &v)
+_info2<false>&& operator<<(_info2<false>&& _log, const T &)
 {
         return std::move(_log);
 }
+
+template<bool Enabled>
+struct _debug;
+
+template<>
+struct _debug<true> : public logger
+{
+        _debug() : logger("DBG") {}
+};
+
+template<>
+struct _debug<false> { };
+
+#if defined(NDEBUG)
+using debug = _debug<IS_ENABLED(CONFIG_FORCE_DEBUG)>;
+#else
+using debug = _debug<true>;
 #endif
 
-#if !defined(NDEBUG) || CONFIG_FORCE_DEBUG
-class debug : public logger
-{
-public:
-        debug() : logger("DBG") {}
-};
-#else
-
-struct debug
-{
-};
-
 template<typename T>
-debug&& operator<<(debug&& log, const T&)
+_debug<false>&& operator<<(_debug<false>&& log, const T&)
 {
         return std::move(log);
 }
-
-#endif
 
 } // namespace logging
 

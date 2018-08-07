@@ -6,23 +6,36 @@
 #include <cstddef>
 #include "tools/literals.hpp"
 
-class config_option
+namespace config
+{
+class option
 {
 public:
-        explicit 
-        constexpr config_option(bool enabled) 
-        : enabled_(enabled) {}
+        explicit constexpr option(bool enabled)
+                           : enabled_(enabled) {}
 
-        friend static constexpr bool IS_ENABLED(config_option option)
+        friend constexpr bool IS_ENABLED(option _option)
         {
-                return option.enabled_;
+                return _option.enabled_;
         }
 private:
         const bool enabled_;
 };
 
-static constexpr config_option Enabled(true);
-static constexpr config_option Disabled(false);
+
+constexpr option depends_on(option opt, option value)
+{
+        return option(IS_ENABLED(opt) && IS_ENABLED(value));
+}
+
+constexpr option conflicts_with(option opt, option value)
+{
+        return option(!IS_ENABLED(opt) && IS_ENABLED(value));
+}
+
+constexpr option ON(true);
+constexpr option OFF(false);
+}
 
 /******************************************************************************
 * COMMON SECTION
@@ -31,18 +44,18 @@ static constexpr config_option Disabled(false);
 using CONFIG_DATA_TYPE = uint32_t;
 
 /* Number of threads if hardware_concurrency() fails */
-static constexpr size_t CONFIG_DEFAULT_THREAD_NUMBER = 2;
+constexpr size_t CONFIG_DEFAULT_THREAD_NUMBER = 2;
 
 /******************************************************************************
 * FILE SECTION
 *****************************************************************************/
 
-static constexpr const char* CONFIG_INPUT_FILENAME  = "input";
-static constexpr const char* CONFIG_OUTPUT_FILENAME = "output";
-static constexpr const char  CONFIG_CHUNK_NAME_SEP = '_';
-static constexpr const char* CONFIG_CHUNK_DIR = "chunks";
+constexpr const char* CONFIG_INPUT_FILENAME  = "input";
+constexpr const char* CONFIG_OUTPUT_FILENAME = "output";
+constexpr const char  CONFIG_CHUNK_NAME_SEP = '_';
+constexpr const char* CONFIG_CHUNK_DIR = "chunks";
 
-static constexpr config_option CONFIG_REMOVE_TMP_FILES = Enabled;
+constexpr auto CONFIG_REMOVE_TMP_FILES = config::OFF;
 
 /******************************************************************************
 * SORT SECTION
@@ -54,59 +67,59 @@ enum
         CONFIG_SORT_STD
 };
 
-static constexpr int CONFIG_SORT_ALGO = CONFIG_SORT_STD;
+constexpr int CONFIG_SORT_ALGO = CONFIG_SORT_STD;
 
 /******************************************************************************
 * MERGE SECTION
 *****************************************************************************/
 
-static constexpr auto CONFIG_N_WAY_FLAT = Enabled;
+constexpr auto CONFIG_N_WAY_FLAT = config::ON;
 
 /* 0 - auto, n > 2 = n */
-static constexpr int CONFIG_N_WAY_MERGE_N = 0;
+constexpr int CONFIG_N_WAY_MERGE_N = 0;
 
-static constexpr int CONFIG_TREE_HEIGH = 2;
+constexpr int CONFIG_TREE_HEIGH = 2;
 
 /******************************************************************************
 * MEMORY SECTION
 *****************************************************************************/
 
 /* Default page size on most systems */
-static constexpr size_t PAGE_SIZE = 4096;
+constexpr size_t PAGE_SIZE = 4096;
 
 /* -x MiB for program itself and some part of each thread stack*/
-static constexpr size_t CONFIG_MEM_AVAIL = 500_KiB;
+constexpr size_t CONFIG_MEM_AVAIL = 10_MiB;
 
-static constexpr float CONFIG_IO_BUFF_RATIO = 0.5f;
+constexpr float CONFIG_IO_BUFF_RATIO = 0.5f;
 
 /******************************************************************************
 * LOG SECTION
 *****************************************************************************/
 
-static constexpr auto CONFIG_FORCE_DEBUG = Disabled;
+constexpr auto CONFIG_FORCE_DEBUG = config::OFF;
 
-static constexpr auto CONFIG_PERF_MEASURE_GET_NEXT_SORT_TASK = Disabled;
+constexpr auto CONFIG_PERF_MEASURE_GET_NEXT_SORT_TASK = config::OFF;
 
-static constexpr int CONFIG_INFO_LEVEL = 2;
+constexpr int CONFIG_INFO_LEVEL = 2;
 
 
 /******************************************************************************
  * TEST SECTION
  *****************************************************************************/
 
-static constexpr auto CONFIG_SKIP_SORT = Disabled;
+constexpr auto CONFIG_GENERATE_TEST_FILE = config::OFF;
 
-static constexpr auto CONFIG_REMOVE_RESULT = Enabled;
+constexpr auto CONFIG_SKIP_SORT = config::conflicts_with(CONFIG_GENERATE_TEST_FILE, config::ON);
 
-static constexpr auto CONFIG_CHECK_RESULT = Enabled;
+constexpr auto CONFIG_REMOVE_RESULT = config::ON;
 
-static constexpr auto CONFIG_CHECK_HASH = Enabled;
+constexpr auto CONFIG_CHECK_RESULT = config::ON;
 
-static constexpr const char* CONFIG_ORIGIN_HASH_FILENAME = "origin.hash";
+constexpr auto CONFIG_CHECK_HASH = config::ON;
 
-static constexpr auto CONFIG_PRINT_RESULT = Disabled;
+constexpr const char* CONFIG_ORIGIN_HASH_FILENAME = "origin.hash";
 
-static constexpr auto CONFIG_GENERATE_TEST_FILE = Enabled;
+constexpr auto CONFIG_PRINT_RESULT = config::OFF;
 
 enum
 {
@@ -114,6 +127,6 @@ enum
         CONFIG_TEST_FILE_SHUFFLE
 };
 
-static constexpr int CONFIG_TEST_FILE_TYPE = CONFIG_TEST_FILE_SHUFFLE;
+constexpr int CONFIG_TEST_FILE_TYPE = CONFIG_TEST_FILE_SHUFFLE;
 
-static constexpr uint64_t CONFIG_TEST_FILE_SIZE = 5_MiB;
+constexpr uint64_t CONFIG_TEST_FILE_SIZE = 500_MiB;

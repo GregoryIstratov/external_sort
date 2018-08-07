@@ -35,14 +35,12 @@ inline
 std::string get_thread_id_str()
 {
         static const auto flags = std::ios_base::hex
-                | std::ios_base::uppercase;
+                                | std::ios_base::uppercase 
+                                | std::ios_base::showbase;
 
         std::stringstream ss;
         ss << std::resetiosflags(std::ios_base::dec)
-                << "0x"
                 << std::setiosflags(flags)
-                << std::setfill('0')
-                << std::setw(sizeof(size_t) * 2)
                 << std::this_thread::get_id();
 
         return ss.str();

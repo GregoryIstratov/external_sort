@@ -143,6 +143,10 @@ void iterate_dir(const char* path, std::function<void(const char*)>&& callback)
 
         while((ent = readdir(dir)))
         {
+                if (std::strcmp(ent->d_name, ".") == 0
+                    || std::strcmp(ent->d_name, "..") == 0)
+                        continue;
+
                 callback(ent->d_name);
         }
 }
@@ -172,7 +176,7 @@ void create_directory(const char* path)
         auto ret = mkdir(path);
 #else
         mode_t mode = 0755;
-        auto ret = mkdir(path.c_str(), mode);
+        auto ret = mkdir(path, mode);
 #endif
 
         if(ret != 0)

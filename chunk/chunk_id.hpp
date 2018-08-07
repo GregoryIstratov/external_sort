@@ -28,7 +28,7 @@ struct chunk_id
 
                 // each byte can be represented as a 2 digit number in hex
                 constexpr size_t hex_digits = sizeof(lvl_t) * 2;
-                char lvl_s[hex_digits + 1];
+                char lvl_s[hex_digits + 1]{};
                 const char* id_s = sep_pos + 1;
 
                 std::strncpy(lvl_s, name, sep_pos - name);
@@ -36,15 +36,21 @@ struct chunk_id
                 const char* lvl_s_end = &lvl_s[sep_pos - name];
 
                 char* end;
+
+                errno = 0;
                 lvl = (lvl_t)std::strtoull(lvl_s, &end, 16);
+
                 if (errno != 0 || end != lvl_s_end)
                         throw_exception("Cannot convert '"
-                                        << lvl_s << "' to an integer");
+                                        << lvl_s << "' to an integer: " 
+                                        << strerror(errno));
 
+                errno = 0;
                 id = (id_t)std::strtoull(id_s, &end, 16);
                 if (errno != 0 || end != name_end)
                         throw_exception("Cannot convert '"
-                                        << id_s << "' to an integer");
+                                        << id_s << "' to an integer"
+                                        << strerror(errno));
         }
 
 
