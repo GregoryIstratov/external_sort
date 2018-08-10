@@ -3,6 +3,7 @@
 * ***************************************************************************/
 
 #pragma once
+#include <cstdint>
 #include <cstddef>
 #include "tools/literals.hpp"
 
@@ -21,7 +22,6 @@ public:
 private:
         const bool enabled_;
 };
-
 
 constexpr option depends_on(option opt, option value)
 {
@@ -46,7 +46,7 @@ using CONFIG_DATA_TYPE = uint32_t;
 /* Number of threads if hardware_concurrency() fails */
 constexpr size_t CONFIG_DEFAULT_THREAD_NUMBER = 2;
 
-#if defined(BOOST_FOUND)
+#if defined(__BOOST_FOUND)
 constexpr auto CONFIG_BOOST = config::ON;
 #else
 constexpr auto CONFIG_BOOST = config::OFF;
@@ -62,6 +62,10 @@ constexpr const char  CONFIG_CHUNK_NAME_SEP = '_';
 constexpr const char* CONFIG_CHUNK_DIR = "chunks";
 
 constexpr auto CONFIG_REMOVE_TMP_FILES = config::OFF;
+
+constexpr auto CONFIG_PREFER_MMAP = config::OFF;
+
+constexpr auto CONFIG_USE_CPP_STREAMS = config::ON;
 
 /******************************************************************************
 * SORT SECTION
@@ -115,7 +119,8 @@ constexpr int CONFIG_INFO_LEVEL = 2;
 
 constexpr auto CONFIG_GENERATE_TEST_FILE = config::OFF;
 
-constexpr auto CONFIG_SKIP_SORT = config::conflicts_with(CONFIG_GENERATE_TEST_FILE, config::ON);
+constexpr auto CONFIG_SKIP_SORT = config::conflicts_with(
+                                        CONFIG_GENERATE_TEST_FILE, config::ON);
 
 constexpr auto CONFIG_REMOVE_RESULT = config::ON;
 

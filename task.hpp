@@ -5,7 +5,9 @@
 #include "tools/file.hpp"
 #include "tools/perf_timer.hpp"
 #include "tools/format.hpp"
+#include "chunk/chunk_id.hpp"
 #include "chunk/chunk_istream.hpp"
+#include "chunk/chunk_ostream.hpp"
 
 template<typename T>
 class chunk_sort_task
@@ -63,7 +65,7 @@ private:
                                 break;
 
                         default:
-                                throw_exception("Unknown option");
+                                THROW_EXCEPTION("Unknown option");
                 }
         }
 
@@ -113,16 +115,20 @@ public:
                 size_t ock_mem = round_down(out_buff_size, sizeof(T));
 
                 if(!ick_mem || !ock_mem)
-                        throw_exception("No memory for buffers [ick_mem="
+                        THROW_EXCEPTION("No memory for buffers [ick_mem="
                                                               << ick_mem
                                                               << " ock_mem="
                                                               << ock_mem
                                                               << "]");
 
-                for(auto& is : input_)
+                uint64_t output_size = 0;
+                for (auto& is : input_)
+                {
                         is.open(ick_mem);
+                        output_size += is.size();
+                }
 
-                output_.open(ock_mem);
+                output_.open(ock_mem, output_size);
 
                 if(CONFIG_INFO_LEVEL >= 2)
                 {

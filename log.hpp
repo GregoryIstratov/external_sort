@@ -80,7 +80,7 @@ public:
                         std::lock_guard<std::mutex> lk(mtx_);
 
                         if (fos_.is_open())
-                                fos_ << oss_.rdbuf();                        
+                                fos_ << oss_.rdbuf() << std::flush;                        
 
                         oss_.seekg(0);
 
@@ -107,12 +107,10 @@ public:
 
         static void enable_file_logging(std::string&& filename)
         {
-                fos_.rdbuf()->pubsetbuf(nullptr, 0);
-
                 fos_.open(filename, std::ios::out | std::ios::app);
 
                 if (!fos_)
-                        throw_exception("Cannot open the file '" 
+                        THROW_EXCEPTION("Cannot open the file '" 
                                         << filename << "': " 
                                         << strerror(errno));
         }

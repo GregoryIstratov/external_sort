@@ -109,7 +109,7 @@ private:
 
                         // need at least 2 files to merge
                         if (id_list.size() < 2)
-                                throw_exception("Nothing to merge");
+                                THROW_EXCEPTION("Nothing to merge");
 
                         tmu().set_id_list(std::move(id_list));
                 }

@@ -31,7 +31,7 @@ public:
                 {
                         unique_guard<std::mutex> lk_(lock);
 
-                        if (!fr_.is_opened() || fr_.eof())
+                        if (!fr_.is_open() || fr_.eof())
                         {
                                 return chunk_sort_task<T>();
                         }

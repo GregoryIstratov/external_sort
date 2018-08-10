@@ -161,6 +161,7 @@ void print_result()
         info() << ss.rdbuf();
 }
 
+template<typename T>
 void make_test_file()
 {
         static_assert(!(CONFIG_TEST_FILE_TYPE == CONFIG_TEST_FILE_RANDOM
@@ -179,13 +180,19 @@ void make_test_file()
                 info2() << "Generating " << size_format(CONFIG_TEST_FILE_SIZE)
                         << " test data..";
 
-                std::vector<CONFIG_DATA_TYPE> arr(CONFIG_TEST_FILE_SIZE
-                        / sizeof(CONFIG_DATA_TYPE));
+                std::vector<T> arr(CONFIG_TEST_FILE_SIZE
+                        / sizeof(T));
 
-                auto i = CONFIG_DATA_TYPE();
+
+                auto i = std::numeric_limits<T>::min();
+
+                constexpr bool check = std::is_signed<T>::value &&
+                        (std::numeric_limits<T>::max() < CONFIG_TEST_FILE_SIZE);
+
+                static_assert(!check, "T is signed and there will be an overflow");
 
                 for (auto& v : arr)
-                        v = i++;
+                        v = i++;                
 
                 info2() << "Computing hash of test data..."
                         << fmt_clear(fmt::endl);
@@ -206,13 +213,13 @@ void make_test_file()
 
         case CONFIG_TEST_FILE_RANDOM:
         {
-                gen_rnd_test_file(CONFIG_INPUT_FILENAME,
-                        CONFIG_TEST_FILE_SIZE);
+                gen_rnd_test_file<T>(CONFIG_INPUT_FILENAME,
+                                     CONFIG_TEST_FILE_SIZE);
                 break;
         }
 
         default:
-                throw_exception("Unknown test file type");
+                THROW_EXCEPTION("Unknown test file type");
         }
 }
 
@@ -225,7 +232,11 @@ void init_enviroment()
 int main(int argc, char** argv)
 try
 {
+        using data_t = CONFIG_DATA_TYPE;
+
         logging::logger::enable_file_logging("external_sort.log");
+
+        info() << "Boost Enabled";
 
         init_enviroment();
 
@@ -233,13 +244,10 @@ try
 
         if (IS_ENABLED(CONFIG_GENERATE_TEST_FILE))
         {
-                perf_timer("Test file generating:", &make_test_file);
+                perf_timer("Test file generating:", &make_test_file<data_t>);
         }
         else if (argc > 1)
-                input_filename = argv[1];                
-        
-
-        using data_t = CONFIG_DATA_TYPE;
+                input_filename = argv[1];
 
         raw_file_reader input_fr(input_filename);
 
@@ -284,11 +292,11 @@ try
 
         /*check constrains */
         if (input_buff_size < sizeof(data_t))
-                throw_exception("Input buffer size is too small = " 
+                THROW_EXCEPTION("Input buffer size is too small = " 
                                 << size_format(input_buff_size));
 
         if (output_buff_size < sizeof(data_t))
-                throw_exception("Output buffer size is too small = "
+                THROW_EXCEPTION("Output buffer size is too small = "
                         << size_format(output_buff_size));
 
         /* main unit in the program */

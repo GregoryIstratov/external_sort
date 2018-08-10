@@ -20,7 +20,7 @@ public:
                 --n_;
 
                 if (n_ < 0)
-                        throw_exception("error in barrier thread sync");
+                        THROW_EXCEPTION("error in barrier thread sync");
 
                 if (n_ == 0)
                 {

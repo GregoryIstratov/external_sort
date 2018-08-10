@@ -13,7 +13,9 @@ private:
         std::string str_;
 };
 
-#define throw_exception(msg) do { \
+
+
+#define THROW_EXCEPTION(msg) do { \
         std::stringstream ss; (ss << msg); \
         throw __myexception(ss.str().c_str(), \
                             __FILE__, __FUNCTION__, __LINE__); \

@@ -81,7 +81,7 @@ public:
                         }
                 }
 
-                return std::move(q2);
+                return q2;
         }
 
 

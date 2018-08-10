@@ -22,7 +22,9 @@ public:
         std::string operator()(DWORD err_code)
         {
                 LCID lcid;
-                GetLocaleInfoEx(L"en-US", LOCALE_RETURN_NUMBER | LOCALE_ILANGUAGE, (wchar_t*)&lcid, sizeof(lcid));
+                GetLocaleInfoEx(L"en-US", LOCALE_RETURN_NUMBER 
+                                        | LOCALE_ILANGUAGE, 
+                                (wchar_t*)&lcid, sizeof(lcid));
 
                 if (!FormatMessageA(
                         FORMAT_MESSAGE_ALLOCATE_BUFFER
@@ -81,7 +83,7 @@ void iterate_dir(const char* path, std::function<void(const char*)>&& callback)
         }
         else
         {
-                throw_exception("Failed to read directory '"
+                THROW_EXCEPTION("Failed to read directory '"
                         << path
                         << "': "
                         << win_error_string()(GetLastError()));
@@ -99,7 +101,7 @@ bool check_dir_exist(const char* path)
 void create_directory(const char* name)
 {
         if (!CreateDirectoryA(name, nullptr))
-                throw_exception(win_error_string()(GetLastError()));
+                THROW_EXCEPTION(win_error_string()(GetLastError()));
 }
 
 #else
@@ -135,7 +137,7 @@ void iterate_dir(const char* path, std::function<void(const char*)>&& callback)
         dir_guard guard(dir);
 
         if(!dir)
-                throw_exception("Failed to open directory '"
+                THROW_EXCEPTION("Failed to open directory '"
                                         << path
                                         << "': "
                                         << strerror(errno));
@@ -165,7 +167,7 @@ bool check_dir_exist(const char* path)
         }
         else
         {
-                throw_exception("Error in checking die existance: "
+                THROW_EXCEPTION("Error in checking die existance: "
                                 << strerror(errno));
         }
 }
@@ -180,37 +182,11 @@ void create_directory(const char* path)
 #endif
 
         if(ret != 0)
-                throw_exception("Failed to create directory '"
+                THROW_EXCEPTION("Failed to create directory '"
                                 << path << "': " << strerror(errno));
 }
 
 #endif // defined
-
-void gen_rnd_test_file(const char* filename, uint64_t size)
-{
-        if (size % 4)
-                throw_exception("gen_rnd_test_file: size must be product of 4");
-
-        uint64_t N = size / 4;
-
-        FILE *f = fopen(filename, "wb");
-
-        if (!f) {
-                throw_exception("Can't create the file '" << strerror(errno));
-        }
-
-        std::random_device rd;
-        std::default_random_engine e(rd());
-
-        std::uniform_int_distribution<uint32_t> dis;
-
-        for (uint32_t i = 0; i < N; ++i) {
-                uint32_t v = dis(e);
-                fwrite(&v, 4, 1, f);
-        }
-
-        fclose(f);
-}
 
 void _file_write(std::string&& filename, const void* data, size_t size)
 {
@@ -229,6 +205,98 @@ std::vector<unsigned char> _file_read_all(std::string&& filename)
 
         f.read((char*)&data[0], sz);
 
-        return std::move(data);
+        return data;
 }
 
+#if defined(__BOOST_FOUND)
+#include <boost/iostreams/device/mapped_file.hpp>
+
+class boost_memory_mapped_file_source : public memory_mapped_file_source
+{
+public:
+        void open(const char* filename) override
+        {
+                source_.open(filename);
+
+                if (!source_)
+                        THROW_EXCEPTION("Cannot open file '"
+                                << filename << "' for mapping");
+        }
+
+        void close() override
+        {
+                source_.close();
+        }
+
+        size_t size() const override
+        {
+                return source_.size();
+        }
+
+        const char* data() const override
+        {
+                return source_.data();
+        }
+private:
+        boost::iostreams::mapped_file_source source_;
+};
+
+
+std::unique_ptr<memory_mapped_file_source> memory_mapped_file_source::create()
+{
+        return std::make_unique<boost_memory_mapped_file_source>();
+}
+
+class boost_memory_mapped_file_sink : public memory_mapped_file_sink
+{
+public:
+        void open(const char* filename, size_t size, 
+                  size_t offset, bool create) override
+        {
+                boost::iostreams::mapped_file_params params;
+                params.path = filename;
+                params.flags = boost::iostreams::mapped_file_base::readwrite;
+                params.offset = offset;
+
+                if (!create)
+                        params.length = size;
+                else
+                        params.new_file_size = size;
+
+                sink_.open(params);
+                if (!sink_)
+                        THROW_EXCEPTION("Can't open file '" << filename 
+                                        << "' for mapping");
+        }
+
+        void close() override
+        {
+                sink_.close();
+        }
+
+        char* data() const override
+        {
+                return sink_.data();
+        }
+private:
+        boost::iostreams::mapped_file_sink sink_;
+};
+
+std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
+{
+        return std::make_unique<boost_memory_mapped_file_sink>();
+}
+
+#else
+
+std::unique_ptr<memory_mapped_file_source> memory_mapped_file_source::create()
+{
+        THROW_EXCEPTION("Not implemented yet");
+}
+
+std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
+{
+        THROW_EXCEPTION("Not implemented yet");
+}
+
+#endif
