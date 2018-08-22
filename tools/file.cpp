@@ -289,6 +289,140 @@ std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
 
 #else
 
+#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+class posix_mmap_file_source : public memory_mapped_file_source
+{
+public:
+	~posix_mmap_file_source() 
+	{
+		close();
+	}
+
+	void open(const char* filename) override
+	{
+		auto fd = ::open(filename, O_RDONLY);
+		if(fd == -1)
+			THROW_EXCEPTION("Cannot open file '" << filename 
+					<< "': " << strerror(errno));
+
+		struct stat sb;
+		if(fstat(fd, &sb) == -1)
+			THROW_EXCEPTION("Cannot get file '" << filename 
+					<< "' stat: " << strerror(errno));
+
+		size_ = sb.st_size;
+
+		ptr_ = mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0);
+
+		if(ptr_ == MAP_FAILED)
+			THROW_EXCEPTION("mmap file '" << filename 
+					<< "' failed: " << strerror(errno));
+	}
+
+        size_t size() const override
+        {
+                return size_;
+        }
+
+	void close() override
+	{
+		if(ptr_ != nullptr || ptr_ != MAP_FAILED)
+		{
+			munmap(ptr_, size_);
+			ptr_ = nullptr;
+		}
+
+		if(fd_ != fd_type())
+		{
+			::close(fd_);
+			fd_ = fd_type();
+		}
+	}
+
+	const char* data() const override
+	{
+		return (char*)ptr_;
+	}
+private:
+	using fd_type = decltype(::open("",O_RDONLY));
+
+	fd_type fd_ = fd_type();
+	void* ptr_ = nullptr;
+	size_t size_ = 0;
+};
+
+std::unique_ptr<memory_mapped_file_source> memory_mapped_file_source::create()
+{
+	return std::make_unique<posix_mmap_file_source>();
+}
+
+class posix_mmap_file_sink : public memory_mapped_file_sink
+{
+public:
+	~posix_mmap_file_sink()
+	{
+                close();
+	}
+
+        void open(const char* filename, size_t size, 
+                  size_t offset, bool create) override
+        {
+                size_ = size;
+
+                fd_ = ::open(filename, O_CREAT|O_WRONLY|O_TRUNC, 777);
+
+                if(fd_ == -1)
+                        THROW_EXCEPTION("Cannot open file '" << filename 
+                                        << "': " << strerror(errno));
+
+                ptr_ = mmap(nullptr, size_, PROT_WRITE, MAP_PRIVATE, fd_, offset);
+                if(ptr_ == MAP_FAILED)
+                        THROW_EXCEPTION("Cannot map file '" << filename 
+                                        << "': " << strerror(errno));
+	}
+
+	void close() override
+	{
+		if(ptr_ != nullptr || ptr_ != MAP_FAILED)
+		{
+			munmap(ptr_, size_);
+			ptr_ = nullptr;
+		}
+
+		if(fd_ != fd_type())
+		{
+			::close(fd_);
+			fd_ = fd_type();
+		}
+	}
+
+	char* data() const override
+	{
+		return (char*)ptr_;
+	}
+
+private:
+        using fd_type = decltype(::open("",O_RDONLY));
+
+        fd_type fd_ = fd_type();
+	void* ptr_ = nullptr;
+	size_t size_ = 0;
+};
+
+std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
+{
+        return std::make_unique<posix_mmap_file_sink>();
+}
+
+#else
+
 std::unique_ptr<memory_mapped_file_source> memory_mapped_file_source::create()
 {
         THROW_EXCEPTION("Not implemented yet");
@@ -299,4 +433,6 @@ std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
         THROW_EXCEPTION("Not implemented yet");
 }
 
-#endif
+#endif // POSIX
+
+#endif // __BOOST_FOUND
