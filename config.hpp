@@ -63,7 +63,9 @@ constexpr const char* CONFIG_CHUNK_DIR = "chunks";
 
 constexpr auto CONFIG_REMOVE_TMP_FILES = config::OFF;
 
-constexpr auto CONFIG_PREFER_MMAP = config::OFF;
+constexpr auto CONFIG_USE_MMAP = config::ON;
+
+constexpr auto CONFIG_PREFER_BOOST_MMAP = config::OFF;
 
 constexpr auto CONFIG_USE_CPP_STREAMS = config::ON;
 

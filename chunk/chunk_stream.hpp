@@ -13,16 +13,13 @@ class _chunk_istream;
 template<typename T, typename Type>
 class _chunk_ostream;
 
-constexpr bool _use_mmap = IS_ENABLED(CONFIG_PREFER_MMAP)
-                          && IS_ENABLED(CONFIG_BOOST);
-
 constexpr bool _use_cpp_streams = IS_ENABLED(CONFIG_USE_CPP_STREAMS);
 
 using cpp_stdio_stream_type = std::conditional<_use_cpp_streams, 
                                                chunk_stream_cpp, 
                                                chunk_stream_stdio>::type;
 
-using chunk_stream_type = std::conditional<_use_mmap, 
+using chunk_stream_type = std::conditional<IS_ENABLED(CONFIG_USE_MMAP),
                                            chunk_stream_mmap, 
                                            cpp_stdio_stream_type>::type;
 

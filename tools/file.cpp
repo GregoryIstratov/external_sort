@@ -208,6 +208,43 @@ std::vector<unsigned char> _file_read_all(std::string&& filename)
         return data;
 }
 
+class boost_memory_mapped_file_source;
+class boost_memory_mapped_file_sink;
+
+class system_mmap_file_source {};
+class system_mmap_file_sink {};
+
+/* Little explanation on this:
+ * If we want to use memory mapping we could choose between using boost maping 
+ * and OS API maping, if CONFIG_USE_MMAP is enabled and boost is disabled or 
+ * not available we check for the system mmap which can be not implemented for 
+ * the host and we throw static_assert to not let it be compiled.
+ */
+
+template<typename T>
+struct mmap_source_factory
+{
+        //static_assert(!IS_ENABLED(CONFIG_USE_MMAP),
+        //              "Unsupported mmap type for this OS");
+
+        std::unique_ptr<memory_mapped_file_source> operator()() const
+        {
+                throw;
+        }
+};
+
+template<typename T>
+struct mmap_sink_factory
+{
+        //static_assert(!IS_ENABLED(CONFIG_USE_MMAP), 
+        //              "Unsupported mmap type for this OS");
+
+        std::unique_ptr<memory_mapped_file_sink> operator()() const
+        {
+                throw;
+        }
+};
+
 #if defined(__BOOST_FOUND)
 #include <boost/iostreams/device/mapped_file.hpp>
 
@@ -240,12 +277,6 @@ public:
 private:
         boost::iostreams::mapped_file_source source_;
 };
-
-
-std::unique_ptr<memory_mapped_file_source> memory_mapped_file_source::create()
-{
-        return std::make_unique<boost_memory_mapped_file_source>();
-}
 
 class boost_memory_mapped_file_sink : public memory_mapped_file_sink
 {
@@ -282,14 +313,28 @@ private:
         boost::iostreams::mapped_file_sink sink_;
 };
 
-std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
+template<>
+struct mmap_source_factory<boost_memory_mapped_file_source>
 {
-        return std::make_unique<boost_memory_mapped_file_sink>();
-}
+        auto operator()() const
+        {
+                return std::make_unique<boost_memory_mapped_file_source>();
+        }
+};
 
-#else
+template<>
+struct mmap_sink_factory<boost_memory_mapped_file_sink>
+{
+        auto operator()() const
+        {
+                return std::make_unique<boost_memory_mapped_file_sink>();
+        }
+};
+
+#endif // __BOOST_FOUND
 
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+
 
 #include <unistd.h>
 #include <sys/mman.h>
@@ -300,139 +345,185 @@ std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
 class posix_mmap_file_source : public memory_mapped_file_source
 {
 public:
-	~posix_mmap_file_source() 
-	{
-		close();
-	}
+        ~posix_mmap_file_source()
+        {
+                close();
+        }
 
-	void open(const char* filename) override
-	{
-		auto fd = ::open(filename, O_RDONLY);
-		if(fd == -1)
-			THROW_EXCEPTION("Cannot open file '" << filename 
-					<< "': " << strerror(errno));
+        void open(const char* filename) override
+        {
+                auto fd = ::open(filename, O_RDONLY);
+                if (fd == -1)
+                        THROW_EXCEPTION("Cannot open file '" << filename
+                                << "': " << strerror(errno));
 
-		struct stat sb;
-		if(fstat(fd, &sb) == -1)
-			THROW_EXCEPTION("Cannot get file '" << filename 
-					<< "' stat: " << strerror(errno));
+                struct stat sb;
+                if (fstat(fd, &sb) == -1)
+                        THROW_EXCEPTION("Cannot get file '" << filename
+                                << "' stat: " << strerror(errno));
 
-		size_ = sb.st_size;
+                size_ = sb.st_size;
 
-		ptr_ = mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0);
+                ptr_ = mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0);
 
-		if(ptr_ == MAP_FAILED)
-			THROW_EXCEPTION("mmap file '" << filename 
-					<< "' failed: " << strerror(errno));
-	}
+                if (ptr_ == MAP_FAILED)
+                        THROW_EXCEPTION("mmap file '" << filename
+                                << "' failed: " << strerror(errno));
+        }
 
         size_t size() const override
         {
                 return size_;
         }
 
-	void close() override
-	{
-		if(ptr_ != nullptr || ptr_ != MAP_FAILED)
-		{
-			munmap(ptr_, size_);
-			ptr_ = nullptr;
-		}
+        void close() override
+        {
+                if (ptr_ != nullptr || ptr_ != MAP_FAILED)
+                {
+                        munmap(ptr_, size_);
+                        ptr_ = nullptr;
+                }
 
-		if(fd_ != fd_type())
-		{
-			::close(fd_);
-			fd_ = fd_type();
-		}
-	}
+                if (fd_ != fd_type())
+                {
+                        ::close(fd_);
+                        fd_ = fd_type();
+                }
+        }
 
-	const char* data() const override
-	{
-		return (char*)ptr_;
-	}
+        const char* data() const override
+        {
+                return (char*)ptr_;
+        }
 private:
-	using fd_type = decltype(::open("",O_RDONLY));
+        using fd_type = decltype(::open("", O_RDONLY));
 
-	fd_type fd_ = fd_type();
-	void* ptr_ = nullptr;
-	size_t size_ = 0;
+        fd_type fd_ = fd_type();
+        void* ptr_ = nullptr;
+        size_t size_ = 0;
 };
-
-std::unique_ptr<memory_mapped_file_source> memory_mapped_file_source::create()
-{
-	return std::make_unique<posix_mmap_file_source>();
-}
 
 class posix_mmap_file_sink : public memory_mapped_file_sink
 {
 public:
-	~posix_mmap_file_sink()
-	{
+        ~posix_mmap_file_sink()
+        {
                 close();
-	}
+        }
 
-        void open(const char* filename, size_t size, 
-                  size_t offset, bool create) override
+        void open(const char* filename, size_t size,
+                size_t offset, bool create) override
         {
                 size_ = size;
 
-                fd_ = ::open(filename, O_CREAT|O_WRONLY|O_TRUNC, 777);
+                fd_ = ::open(filename, O_RDWR | O_CREAT | O_TRUNC, (mode_t)0600);
 
-                if(fd_ == -1)
-                        THROW_EXCEPTION("Cannot open file '" << filename 
+                if (fd_ == -1)
+                        THROW_EXCEPTION("Cannot open file '" << filename
+                                << "': " << strerror(errno));
+
+                /* Something needs to be written at the end of the file to
+                * have the file actually have the new size.
+                * Just writing an empty string at the current file position will do.
+                *
+                * Note:
+                *  - The current position in the file is at the end of the stretched
+                *    file due to the call to lseek().
+                *  - An empty string is actually a single '\0' character, so a zero-byte
+                *    will be written at the last byte of the file.
+                */
+
+                if (lseek(fd_, size - 1, SEEK_SET) == -1)
+                        THROW_EXCEPTION("Cannot seek file '" << filename 
                                         << "': " << strerror(errno));
 
-                ptr_ = mmap(nullptr, size_, PROT_WRITE, MAP_PRIVATE, fd_, offset);
-                if(ptr_ == MAP_FAILED)
-                        THROW_EXCEPTION("Cannot map file '" << filename 
+                if (write(fd_, "", 1) == -1)
+                        THROW_EXCEPTION("Cannot write to file '" << filename 
                                         << "': " << strerror(errno));
-	}
 
-	void close() override
-	{
-		if(ptr_ != nullptr || ptr_ != MAP_FAILED)
-		{
-			munmap(ptr_, size_);
-			ptr_ = nullptr;
-		}
+                ptr_ = mmap(nullptr, size_, PROT_READ | PROT_WRITE, MAP_SHARED,
+                            fd_, 0);
 
-		if(fd_ != fd_type())
-		{
-			::close(fd_);
-			fd_ = fd_type();
-		}
-	}
+                if (ptr_ == MAP_FAILED)
+                        THROW_EXCEPTION("Cannot map file '" << filename
+                                << "': " << strerror(errno));
+        }
 
-	char* data() const override
-	{
-		return (char*)ptr_;
-	}
+        void close() override
+        {
+                if (ptr_ != nullptr || ptr_ != MAP_FAILED)
+                {
+                        munmap(ptr_, size_);
+                        ptr_ = nullptr;
+                }
+
+                if (fd_ != fd_type())
+                {
+                        ::close(fd_);
+                        fd_ = fd_type();
+                }
+        }
+
+        char* data() const override
+        {
+                return (char*)ptr_;
+        }
 
 private:
-        using fd_type = decltype(::open("",O_RDONLY));
+        using fd_type = decltype(::open("", O_RDONLY));
 
         fd_type fd_ = fd_type();
-	void* ptr_ = nullptr;
-	size_t size_ = 0;
+        void* ptr_ = nullptr;
+        size_t size_ = 0;
 };
 
-std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
+template<>
+struct mmap_source_factory<system_mmap_file_source>
 {
-        return std::make_unique<posix_mmap_file_sink>();
-}
+        auto operator()() const
+        {
+                return std::make_unique<posix_mmap_file_source>();
+        }
+};
 
-#else
-
-std::unique_ptr<memory_mapped_file_source> memory_mapped_file_source::create()
+template<>
+struct mmap_sink_factory<system_mmap_file_sink>
 {
-        THROW_EXCEPTION("Not implemented yet");
-}
-
-std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
-{
-        THROW_EXCEPTION("Not implemented yet");
-}
+        auto operator()() const
+        {
+                return std::make_unique<posix_mmap_file_sink>();
+        }
+};
 
 #endif // POSIX
 
-#endif // __BOOST_FOUND
+/*
+ * If boost if not enabled or not available fallback to system mmap
+ */
+
+using mmap_source_boost_type = std::conditional<IS_ENABLED(CONFIG_BOOST), 
+                                 boost_memory_mapped_file_source, 
+                                 system_mmap_file_source>::type;
+
+
+using mmap_sink_boost_type = std::conditional<IS_ENABLED(CONFIG_BOOST),
+                                boost_memory_mapped_file_sink,
+                                system_mmap_file_sink>::type;
+
+using mmap_source_type = std::conditional<IS_ENABLED(CONFIG_PREFER_BOOST_MMAP), 
+                              mmap_source_boost_type,
+                              system_mmap_file_source>::type;
+
+using mmap_sink_type = std::conditional<IS_ENABLED(CONFIG_PREFER_BOOST_MMAP),
+                            mmap_sink_boost_type,
+                            system_mmap_file_sink>::type;
+
+std::unique_ptr<memory_mapped_file_source> memory_mapped_file_source::create()
+{
+        return mmap_source_factory<mmap_source_type>()();
+}
+
+std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
+{
+        return mmap_sink_factory<mmap_sink_type>()();
+}
