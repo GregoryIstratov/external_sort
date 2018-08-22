@@ -224,8 +224,13 @@ class system_mmap_file_sink {};
 template<typename T>
 struct mmap_source_factory
 {
-        //static_assert(!IS_ENABLED(CONFIG_USE_MMAP),
-        //              "Unsupported mmap type for this OS");
+        /*
+         * using std::is_same<T,T> is a trick to make static assertion 
+         * deferred until template isn't invoked
+         */
+
+        static_assert(std::is_same<T, T>::value && !IS_ENABLED(CONFIG_USE_MMAP),
+                "Unsupported mmap type for this OS");
 
         std::unique_ptr<memory_mapped_file_source> operator()() const
         {
@@ -236,8 +241,8 @@ struct mmap_source_factory
 template<typename T>
 struct mmap_sink_factory
 {
-        //static_assert(!IS_ENABLED(CONFIG_USE_MMAP), 
-        //              "Unsupported mmap type for this OS");
+        static_assert(std::is_same<T, T>::value && !IS_ENABLED(CONFIG_USE_MMAP),
+                "Unsupported mmap type for this OS");
 
         std::unique_ptr<memory_mapped_file_sink> operator()() const
         {
