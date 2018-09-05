@@ -144,7 +144,7 @@ constexpr auto CONFIG_ENABLE_STACKTRACE = config::OFF;
  * TEST SECTION
  *****************************************************************************/
 
-constexpr auto CONFIG_GENERATE_TEST_FILE = config::OFF;
+constexpr auto CONFIG_GENERATE_TEST_FILE = config::ON;
 
 constexpr auto CONFIG_SKIP_SORT = config::conflicts_with(
                                         CONFIG_GENERATE_TEST_FILE, config::OFF);

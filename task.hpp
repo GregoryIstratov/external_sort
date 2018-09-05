@@ -18,8 +18,8 @@ public:
         chunk_sort_task() = default;
 
         explicit
-        chunk_sort_task(std::unique_ptr<mapped_file>&& file, chunk_id id)
-                : file_(std::move(file)), id_(std::move(id))
+        chunk_sort_task(std::unique_ptr<mapped_range>&& file, chunk_id id)
+                : range_(std::move(file)), id_(std::move(id))
         {}
 
         chunk_sort_task(chunk_sort_task&&) noexcept = default;
@@ -30,20 +30,19 @@ public:
                 perf_timer tm;
                 tm.start();
 
-                auto range = file_->range();
-                range->lock();
+                range_->lock();
 
-                T* data = reinterpret_cast<T*>(range->data());
-                std::size_t size = range->size() / sizeof(T);
+                T* data = reinterpret_cast<T*>(range_->data());
+                std::size_t size = range_->size() / sizeof(T);
 
                 sort(data, size);
 
-                range->unlock();
+                range_->unlock();
 
                 tm.end();
 
                 info2() << "sorted " << id_
-                        << " (" << size_format(range->size())
+                        << " (" << size_format(range_->size())
                         << "/" << num_format(size) << ") for "
                         << tm.elapsed<perf_timer::ms>() << " ms";
 
@@ -60,13 +59,12 @@ public:
                 }
         }
 
-        //Saves mapped data to file and release resources
-        void release()
+        std::unique_ptr<mapped_range> acquire_mapped_mem()
         {
-                file_.reset();
+                return std::move(range_);
         }
 
-        bool empty() const { return !file_; }
+        bool empty() const { return !range_; }
 
         chunk_id id() const { return id_; }
 
@@ -109,7 +107,7 @@ private:
         }
 
 private:
-        std::unique_ptr<mapped_file> file_;
+        std::unique_ptr<mapped_range> range_;
         chunk_id id_;
 };
 
@@ -120,11 +118,9 @@ public:
         chunk_merge_task() = default;
 
         chunk_merge_task(std::vector<chunk_istream<T>>&& input,
-                         chunk_ostream<T>&& output,
-                         chunk_id output_id)
+                         chunk_ostream<T>&& output)
                 : input_(std::move(input)),
-                  output_(std::move(output)),
-                  output_id_(std::move(output_id))
+                  output_(std::move(output))
         {
         }
 
@@ -152,11 +148,8 @@ public:
                 uint64_t output_size = 0;
                 for (auto& is : input_)
                 {
-                        is.open(ick_mem);
                         output_size += is.size();
                 }
-
-                output_.open(ock_mem, output_size);
 
                 if(CONFIG_INFO_LEVEL >= 2)
                 {
@@ -192,11 +185,6 @@ public:
         std::string debug_str() const { return ss_.str(); }
 
         chunk_id id() const { return output_id_; }
-
-        void set_output_filename(const std::string& value)
-        {
-                output_.filename(value);
-        }
 
         void release()
         {

@@ -111,8 +111,9 @@ void check_result(uint64_t isz)
 {
         if (!IS_ENABLED(CONFIG_CHECK_HASH))
         {
-                chunk_istream<CONFIG_DATA_TYPE> res_is;
-                res_is.open(CONFIG_OUTPUT_FILENAME, CONFIG_MEM_AVAIL);
+                auto file = mapped_file::create();
+                file->open(CONFIG_OUTPUT_FILENAME, std::ios::in);
+                chunk_istream<CONFIG_DATA_TYPE> res_is(file->range(), chunk_id());
 
                 uint64_t sz = res_is.size();
                 if (isz == sz)
@@ -147,8 +148,9 @@ void check_result(uint64_t isz)
 
 void print_result()
 {
-        chunk_istream<CONFIG_DATA_TYPE> is;
-        is.open(CONFIG_OUTPUT_FILENAME, CONFIG_MEM_AVAIL);
+        auto file = mapped_file::create();
+        file->open(CONFIG_OUTPUT_FILENAME, std::ios::in);
+        chunk_istream<CONFIG_DATA_TYPE> is(file->range(), chunk_id());
 
         chunk_istream_iterator<CONFIG_DATA_TYPE> beg(is), end;
 
@@ -279,7 +281,11 @@ try
                 input_filename = argv[1];
 
         auto input_file = mapped_file::create();
-        input_file->open(input_filename.c_str(), std::ios::in);
+        input_file->open(input_filename.c_str(), std::ios::in | std::ios::out);
+
+        auto output_file = mapped_file::create();
+        output_file->open(CONFIG_OUTPUT_FILENAME, input_file->size(),
+                         std::ios::out | std::ios::trunc);
 
         size_t threads_n = get_thread_number();
 
@@ -332,11 +338,11 @@ try
         /* main unit in the program */
         pipeline_controller<data_t> controller(
                               std::move(input_file),
+                              std::move(output_file),
                               l0_chunk_size, merge_n, 
                               (uint32_t)threads_n, 
                               mem_avail, 
-                              io_ratio,
-                              CONFIG_OUTPUT_FILENAME
+                              io_ratio
         );
 
         perf_timer("Finished for", [&controller](){

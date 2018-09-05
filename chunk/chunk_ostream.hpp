@@ -132,10 +132,14 @@ class _chunk_ostream<T, chunk_stream_mmap>
 public:
         _chunk_ostream() = default;
 
-        explicit _chunk_ostream(std::string&& filename)
-                : filename_(std::move(filename))
+        explicit _chunk_ostream(mapped_file_uptr&& output_file)
+                : file_(std::move(output_file))
+        {
+                range_ = file_->range();
+                range_->advise(madvice::sequential);
 
-        {}
+                data_ = reinterpret_cast<T*>(range_->data());
+        }
 
         ~_chunk_ostream()
         {
@@ -145,18 +149,6 @@ public:
         _chunk_ostream(_chunk_ostream&&) = default;
         _chunk_ostream& operator=(_chunk_ostream&&) = default;
 
-        void open(size_t, uint64_t output_size)
-        {
-                size_n_  = output_size / sizeof(T);
-
-                file_->open(filename_.c_str(), size_n_ * sizeof(T),
-                            std::ios::out | std::ios::trunc);
-
-                range_ = file_->range();
-                range_->advise(madvice::sequential);
-
-                data_ = reinterpret_cast<T*>(range_->data());
-        }
 
         void put(T v)
         {
@@ -170,22 +162,17 @@ public:
         }
 
         size_t buff_size() const { return 4096; }
-
-        void filename(const std::string& value) { filename_ = value; }
-        std::string filename() const { return filename_; }
 private:
         friend class _chunk_istream<T, chunk_stream_stdio>;
 
 private:
         chunk_id id_;
 
-        mapped_file_uptr file_ = mapped_file::create();
+        mapped_file_uptr file_;
         mapped_range_uptr range_;
 
         T* data_ = nullptr;
         std::size_t size_n_ = 0, cur_ = 0;
-
-        std::string filename_;
 };
 
 template<typename T>

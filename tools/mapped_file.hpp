@@ -8,6 +8,7 @@ struct mapped_file;
 
 enum class madvice
 {
+        normal,
         sequential,
         random
 };

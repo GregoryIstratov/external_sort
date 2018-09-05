@@ -13,13 +13,15 @@ int madvace2posix(madvice adv)
 {
         switch (adv)
         {
+        case madvice::normal:
+                return MADV_NORMAL;
         case madvice::sequential:
                 return MADV_SEQUENTIAL;
         case madvice::random:
                 return MADV_RANDOM;
-        default:
-                THROW_EXCEPTION << "Unknown arg";
         }
+
+        THROW_EXCEPTION << "Unknown arg";
 }
 
 posix_mapped_range::posix_mapped_range(void* mem, std::size_t len) noexcept

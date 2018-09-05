@@ -256,9 +256,22 @@ public:
                 
         }
 
-        explicit _chunk_istream(chunk_id id)
-                : id_(std::move(id))
-        {}
+        explicit _chunk_istream(mapped_range_uptr&& range, chunk_id id)
+                : range_(std::move(range)), id_(id)
+        {
+                auto size = range_->size();
+
+                if (size % elem_size)
+                        THROW_EXCEPTION 
+                        << "Range is broken, the size must be a product of "
+                        << sizeof(T);
+
+                size_n_ = size / sizeof(T);
+
+                range_->advise(madvice::normal);
+
+                data_ = reinterpret_cast<const T*>(range_->data());
+        }
 
         ~_chunk_istream()
         {
@@ -268,29 +281,6 @@ public:
         _chunk_istream(_chunk_istream&& o) = default;
         _chunk_istream& operator=(_chunk_istream&& o) = default;
 
-        void open(size_t buff_size)
-        {
-                open(id().to_full_filename(), buff_size);
-        }
-
-        void open(std::string&& filename, size_t)
-        {
-                file_->open(filename.c_str(), std::ios::in);
-
-                auto file_size = file_->size();
-
-                if (file_size % elem_size)
-                        THROW_EXCEPTION << "File '" << filename
-                                << "' is broken, the size must be a product of "
-                                << sizeof(T);
-
-                size_n_ = file_size / sizeof(T);
-
-                range_ = file_->range();
-                range_->advise(madvice::random);
-
-                data_ = reinterpret_cast<const T*>(range_->data());
-        }
 
         const T& value() const { return data_[cur_]; }
 
@@ -305,7 +295,6 @@ public:
         void release() noexcept
         {
                 range_.reset();
-                file_.reset();
         }
 
         void copy_to(_chunk_ostream<T, chunk_stream_mmap>& os)
@@ -318,13 +307,12 @@ public:
                 while (next());
         }
 
-        chunk_id id() const { return id_; }
-
         uint64_t size() const { return size_n_ * sizeof(T); }
         uint64_t count() const { return size_n_; }
 
         size_t buff_size() const { return 4096; }
 
+        chunk_id id() const { return id_; }
 private:
         static constexpr size_t get_buff_elem_n(size_t buff_size)
         {       
@@ -338,10 +326,8 @@ private:
                 return buff_size / elem_size;
         }
 private:
-        chunk_id id_;
-
-        mapped_file_uptr file_ = mapped_file::create();
         mapped_range_uptr range_;
+        chunk_id id_;
 
         const T* data_ = nullptr;
         std::size_t size_n_ = 0, cur_ = 0;

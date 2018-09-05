@@ -90,28 +90,12 @@ private:
         {
                 if(IS_ENABLED(CONFIG_SKIP_SORT))
                 {
+                        //TODO skip sort for new mmapping arch
+                        THROW_EXCEPTION << "Not supported";
+
                         // let only main thread pass on
                         if (id_ > 0)
                                 return;
-
-                        info2() << "Skipping sorting stage...";
-                        info2() << "Looking for chunks in directory '"
-                                << CONFIG_CHUNK_DIR << "'";
-
-                        std::list<chunk_id> id_list;
-                        iterate_dir(CONFIG_CHUNK_DIR,
-                        [&id_list](const char* filename) -> void
-                        {
-                                info2() << "Found chunk '" << filename << "'";
-
-                                id_list.emplace_back(filename);
-                        });
-
-                        // need at least 2 files to merge
-                        if (id_list.size() < 2)
-                                THROW_EXCEPTION << "Nothing to merge";
-
-                        tmu().set_id_list(std::move(id_list));
                 }
                 else
                 {
