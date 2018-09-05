@@ -2,7 +2,9 @@
 
 #include <vector>
 #include "../tools/exception.hpp"
+#include "../tools/mapped_file.hpp"
 #include "chunk_stream.hpp"
+
 
 template<typename T>
 class _chunk_ostream<T, chunk_stream_cpp>
@@ -32,8 +34,7 @@ public:
                         | std::ios::binary);
 
                 if (!os_)
-                        THROW_EXCEPTION("Can't open file '" << filename_
-                                << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename_) << "Cannot open the file";
 
                 os_.rdbuf()->pubsetbuf(&buff_[0], buff_size);
         }
@@ -90,8 +91,7 @@ public:
 
                 os_ = fopen(filename_.c_str(), "wb");
                 if (!os_)
-                        THROW_EXCEPTION("Can't open file '" << filename_
-                                        << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename_) << "Cannot open the file";
 
                 setvbuf(os_, &buff_[0], _IOFBF, buff_size);
         }
@@ -147,41 +147,76 @@ public:
 
         void open(size_t buff_size, uint64_t output_size)
         {
-                buff_size_ = buff_size;
-                //buff_.resize(buff_size);
+                width_n_ = buff_size / sizeof(T);
+                size_n_  = output_size / sizeof(T);
 
-                sink_->open(filename_.c_str(), output_size, 0, true);
+                file_->open(filename_.c_str(), size_n_ * sizeof(T),
+                            std::ios::out | std::ios::trunc);
 
-                data_ = reinterpret_cast<T*>(sink_->data());
+                if (!load_next_window())
+                        THROW_EXCEPTION << "load_next_window failed " << filename_;
         }
 
         void put(T v)
         {
-                *data_++ = v;
+                if (cur_ >= width_n_)
+                {
+                        load_next_window();
+                }
+
+                data_[cur_++] = v;
         }
 
         void close() noexcept
         {
-                sink_.reset();
-                buff_ = std::vector<char>();
+                range_.reset();
+                file_.reset();
         }
 
-        size_t buff_size() const { return buff_size_; }
+        size_t buff_size() const { return width_n_ * sizeof(T); }
 
         void filename(const std::string& value) { filename_ = value; }
         std::string filename() const { return filename_; }
 private:
         friend class _chunk_istream<T, chunk_stream_stdio>;
 
-private:
-        using file_sink = memory_mapped_file_sink;
-        using file_sink_ptr = std::unique_ptr<file_sink>;
+        //TODO move it to a base class with chunk_istream
+        bool load_next_window()
+        {
+                width_n_ = std::min(width_n_, size_n_ - offset_);
 
-        std::vector<char> buff_;
-        file_sink_ptr sink_ = file_sink::create();
-        std::string filename_;
-        size_t buff_size_ = 0;
+                if (width_n_ == 0)
+                {
+                        if(IS_ENABLED(CONFIG_DEBUG))
+                        {
+                                if (!range_)
+                                        THROW_EXCEPTION << "Trying to write after EOF";
+                        }
+
+                        range_.reset();
+                        return false;
+                }
+
+                range_ = file_->range(offset_ * sizeof(T), width_n_ * sizeof(T));
+                range_->lock();
+                data_ = reinterpret_cast<T*>(range_->data());
+
+                offset_ += width_n_;
+                cur_ = 0;
+
+                return true;
+        }
+private:
+        chunk_id id_;
+
+        mapped_file_uptr file_ = mapped_file::create();
+        mapped_range_uptr range_;
+
         T* data_ = nullptr;
+        std::size_t size_n_ = 0, width_n_ = 0;
+        std::size_t offset_ = 0, cur_ = 0;
+
+        std::string filename_;
 };
 
 template<typename T>

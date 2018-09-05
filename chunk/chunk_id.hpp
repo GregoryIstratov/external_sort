@@ -21,9 +21,9 @@ struct chunk_id
 
                 const char* sep_pos = std::strchr(name, CONFIG_CHUNK_NAME_SEP);
                 if (sep_pos == nullptr)
-                        THROW_EXCEPTION("Failed to find separator '"
+                        THROW_EXCEPTION << "Failed to find separator '"
                                 << CONFIG_CHUNK_NAME_SEP
-                                << "' in '" << name << "'");
+                                << "' in '" << name << "'";
 
 
                 // each byte can be represented as a 2 digit number in hex
@@ -41,16 +41,16 @@ struct chunk_id
                 lvl = (lvl_t)std::strtoull(lvl_s, &end, 16);
 
                 if (errno != 0 || end != lvl_s_end)
-                        THROW_EXCEPTION("Cannot convert '"
+                        THROW_EXCEPTION << "Cannot convert '"
                                         << lvl_s << "' to an integer: " 
-                                        << strerror(errno));
+                                        << put_errno;
 
                 errno = 0;
                 id = (id_t)std::strtoull(id_s, &end, 16);
                 if (errno != 0 || end != name_end)
-                        THROW_EXCEPTION("Cannot convert '"
+                        THROW_EXCEPTION << "Cannot convert '"
                                         << id_s << "' to an integer"
-                                        << strerror(errno));
+                                        << put_errno;
         }
 
 

@@ -61,7 +61,7 @@ public:
                 }
 
                 if (any_failed)
-                        THROW_EXCEPTION("Something went wrong");
+                        THROW_EXCEPTION << "Something went wrong";
         }
 
         uint32_t active_threads() const { return active_threads_; }
@@ -118,7 +118,7 @@ public:
                         auto res = bar_map_.emplace(id, threads_n_);
 
                         if (!res.second)
-                                THROW_EXCEPTION("Failed to insert to hash map");
+                                THROW_EXCEPTION << "Failed to insert to hash map";
 
                         auto& bar = res.first->second;
                         lk.unlock();

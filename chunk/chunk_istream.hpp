@@ -2,6 +2,7 @@
 #include "chunk_id.hpp"
 #include "chunk_stream.hpp"
 #include "../tools/exception.hpp"
+#include "../tools/mapped_file.hpp"
 
 template<typename T>
 class _chunk_istream<T, chunk_stream_cpp>
@@ -38,10 +39,7 @@ public:
                 is_.open(filename, std::ios::in | std::ios::binary);
 
                 if (!is_)
-                        THROW_EXCEPTION("Cannot open the file '"
-                                << filename
-                                << "': "
-                                << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "Cannot open the file";
 
                 is_.rdbuf()->pubsetbuf((char*)&buffer_[0], buff_size);
 
@@ -50,13 +48,13 @@ public:
                 is_.seekg(0, std::ios::beg);
 
                 if (file_size_ % elem_size)
-                        THROW_EXCEPTION("File '" << filename
-                                << "' is broken, the size must be a product of "
-                                << elem_size);
+                        THROW_FILE_EXCEPTION(filename) 
+                                << "File is broken, the size must be a product of "
+                                << elem_size;
 
                 if (!next())
-                        THROW_EXCEPTION("Can't read the file " << filename
-                                << " seems like it's empty");
+                        THROW_EXCEPTION << "Can't read the file " << filename
+                                << " seems like it's empty";
         }
 
         const T& value() const { return val_; }
@@ -69,10 +67,8 @@ public:
                 is_.read((char*)&val_, elem_size);
 
                 if (!is_.eof() && is_.bad())
-                        THROW_EXCEPTION("Cannot read the file '"
-                                << id().to_full_filename()
-                                << "': "
-                                << strerror(errno));
+                        THROW_FILE_EXCEPTION(id().to_full_filename())
+                                << "Cannot read the file";
 
                 auto r = is_.gcount();
                 read_ += r;
@@ -105,10 +101,10 @@ private:
         static size_t get_buff_elem_n(size_t buff_size)
         {
                 if (buff_size % elem_size)
-                        THROW_EXCEPTION("buff_size="
+                        THROW_EXCEPTION << "buff_size="
                                 << buff_size
                                 << " must be a product of "
-                                << elem_size);
+                                << elem_size;
 
                 return buff_size / elem_size;
         }
@@ -158,10 +154,7 @@ public:
                 is_ = fopen(filename.c_str(), "rb");
 
                 if (!is_)
-                        THROW_EXCEPTION("Cannot open the file '"
-                                << filename
-                                << "': "
-                                << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "Cannot open the file";
 
                 setvbuf(is_, (char*)&buffer_[0], _IOFBF, buff_size);
 
@@ -170,13 +163,13 @@ public:
                 rewind(is_);
 
                 if (file_size_ % elem_size)
-                        THROW_EXCEPTION("File '" << filename
-                                << "' is broken, the size must be a product of "
-                                << elem_size);
+                        THROW_FILE_EXCEPTION(filename) 
+                        << "File is broken, the size must be a product of "
+                                << elem_size;
 
                 if (!next())
-                        THROW_EXCEPTION("Can't read the file " << filename
-                                << " seems like it's empty");
+                        THROW_FILE_EXCEPTION(filename) 
+                        << "Can't read the file seems like it's empty";
         }
 
         const T& value() const { return val_; }
@@ -189,10 +182,8 @@ public:
                 size_t r = fread((char*)&val_, 1, elem_size, is_);
 
                 if (ferror(is_))
-                        THROW_EXCEPTION("Cannot read the file '"
-                                << id().to_full_filename()
-                                << "': "
-                                << strerror(errno));
+                        THROW_FILE_EXCEPTION(id().to_full_filename())
+                                             << "Cannot read the file";
 
                 read_ += r;
 
@@ -236,10 +227,10 @@ private:
         static size_t get_buff_elem_n(size_t buff_size)
         {
                 if (buff_size % elem_size)
-                        THROW_EXCEPTION("buff_size="
+                        THROW_EXCEPTION << "buff_size="
                                 << buff_size
                                 << " must be a product of "
-                                << elem_size);
+                                << elem_size;
 
                 return buff_size / elem_size;
         }
@@ -258,7 +249,7 @@ template<typename T>
 class _chunk_istream<T, chunk_stream_mmap>
 {
 public:
-        static constexpr size_t elem_size = sizeof(T);
+        static constexpr std::size_t elem_size = sizeof(T);
 
         _chunk_istream()
         {
@@ -284,87 +275,113 @@ public:
 
         void open(std::string&& filename, size_t buff_size)
         {
-                read_ = 0;
-                buff_size_ = buff_size;
-                buff_elem_n_ = get_buff_elem_n(buff_size);
-                //buffer_.resize(buff_elem_n_);
+                width_n_ = get_buff_elem_n(buff_size);
 
-                source_->open(filename.c_str());
+                file_->open(filename.c_str(), std::ios::in);
 
-                file_size_ = source_->size();
+                auto file_size = file_->size();
 
-                if (file_size_ % elem_size)
-                        THROW_EXCEPTION("File '" << filename
+                if (file_size % elem_size)
+                        THROW_EXCEPTION << "File '" << filename
                                 << "' is broken, the size must be a product of "
-                                << elem_size);
+                                << sizeof(T);
 
-                val_ptr_ = reinterpret_cast<const T*>(source_->data());
+                size_n_ = file_size / sizeof(T);
 
-                if (!next())
-                        THROW_EXCEPTION("Can't read the file " << filename
-                                << " seems like it's empty");
+                if (!load_next_window())
+                        THROW_EXCEPTION << "Can't read the file " << filename
+                                << " seems like it's empty";
         }
 
-        const T& value() const { return val_; }
+        const T& value() const { return data_[cur_]; }
 
         bool next()
         {
-                if (read_ >= file_size_)
-                        return false;
+                ++cur_;
+                if (cur_ < width_n_)
+                {
+                        return true;
+                }
+                else
+                {
+                        if(!load_next_window())
+                                return false;
 
-                val_ = *val_ptr_++;
-                read_ += sizeof(T);
-
-                return true;
+                        return true;
+                }
+                
         }
-        bool eof() const { return read_ >= file_size_; }
+        bool eof() const { return cur_ >= width_n_; }
 
         void release() noexcept
         {
-                source_.reset();
-                buffer_ = std::vector<T>();
+                range_.reset();
+                file_.reset();
         }
 
-        void copy_to(chunk_ostream<T>& os)
+        void copy_to(_chunk_ostream<T, chunk_stream_mmap>& os)
         {
                 do
                 {
-                        os.put(value());
+                        auto val = data_[cur_];
+                        os.put(val);
                 } 
                 while (next());
         }
 
         chunk_id id() const { return id_; }
 
-        uint64_t size() const { return file_size_; }
-        uint64_t count() const { return file_size_ / elem_size; }
+        uint64_t size() const { return size_n_ * sizeof(T); }
+        uint64_t count() const { return size_n_; }
 
-        size_t buff_size() const { return buff_size_; }
+        size_t buff_size() const { return width_n_ * sizeof(T); }
 
 private:
-        static size_t get_buff_elem_n(size_t buff_size)
-        {
+        static constexpr size_t get_buff_elem_n(size_t buff_size)
+        {       
                 if (buff_size % elem_size)
-                        THROW_EXCEPTION("buff_size="
+                        THROW_EXCEPTION << "buff_size="
                                 << buff_size
                                 << " must be a product of "
-                                << elem_size);
+                                << sizeof(T);
+                
 
                 return buff_size / elem_size;
         }
-private:
-        using file_source = memory_mapped_file_source;
-        using file_source_ptr = std::unique_ptr<file_source>;
 
+        bool load_next_window()
+        {
+                width_n_ = std::min(width_n_, size_n_ - offset_);
+
+                if (width_n_ == 0)
+                {
+                        if (IS_ENABLED(CONFIG_DEBUG))
+                        {
+                                if (!range_)
+                                        THROW_EXCEPTION << "Trying to read after EOF";
+                        }
+                        range_.reset();
+                        return false;
+                }
+
+                range_ = file_->range(offset_ * sizeof(T), width_n_ * sizeof(T));
+                range_->lock();
+                data_ = reinterpret_cast<const T*>(range_->data());
+
+                offset_ += width_n_;
+                cur_ = 0;
+
+                return true;
+        }
+private:
         chunk_id id_;
-        size_t buff_size_ = 0;
-        size_t buff_elem_n_ = 0;
-        std::vector<T> buffer_;
-        file_source_ptr source_ = file_source::create();
-        T val_ = T();
-        const T* val_ptr_ = nullptr;
-        uint64_t file_size_ = 0;
-        uint64_t read_ = 0;
+
+        mapped_file_uptr file_ = mapped_file::create();
+        mapped_range_uptr range_;
+
+        const T* data_ = nullptr;
+        std::size_t size_n_ = 0, width_n_ = 0;
+        std::size_t offset_ = 0, cur_ = 0;
 };
 
 

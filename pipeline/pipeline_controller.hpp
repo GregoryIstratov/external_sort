@@ -7,7 +7,7 @@ template<typename T>
 class pipeline_controller
 {
 public:
-        pipeline_controller(raw_file_reader&& input_file, size_t max_chunk_size,
+        pipeline_controller(std::unique_ptr<mapped_file>&& input_file, size_t max_chunk_size,
                 size_t n_way_merge, uint32_t threads_n,
                 size_t mem_avail, float io_ratio,
                 std::string output_filename)
@@ -33,10 +33,10 @@ public:
                 if (std::rename(tmu_.result_id().to_full_filename().c_str(),
                         output_filename_.c_str()) != 0)
                 {
-                        THROW_EXCEPTION("Cannot rename '"
+                        THROW_EXCEPTION << "Cannot rename '"
                                         << tmu_.result_id().to_full_filename()
                                         << "' to '" << output_filename_
-                                        << "': " << strerror(errno));
+                                        << "': " << put_errno;
                 }
         }
 

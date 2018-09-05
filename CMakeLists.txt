@@ -9,7 +9,8 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -march=native")
     #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
     #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
-    #set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Og")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Og")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto")
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Intel")
     # using Intel C++
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
@@ -47,6 +48,7 @@ add_executable(external_sort main.cpp
                              extra/crc64.cpp
                              extra/crc64.hpp
                              extra/hasher.hpp
+                             extra/sort.hpp
                              tools/exception.cpp 
                              tools/exception.hpp
                              tools/barrier.hpp
@@ -54,8 +56,11 @@ add_executable(external_sort main.cpp
                              tools/file.hpp
                              tools/format.hpp
                              tools/literals.hpp
+                             tools/mapped_file.hpp
+                             tools/mapped_file.cpp
                              tools/perf_timer.hpp
                              tools/sequential_mutex.hpp
+                             tools/span.hpp
                              tools/spinlock.hpp
                              tools/unique_guard.hpp
                              tools/util.hpp
@@ -69,4 +74,5 @@ target_link_libraries(external_sort Threads::Threads)
 
 if(Boost_FOUND)
 target_link_libraries(external_sort ${Boost_LIBRARIES})
+target_link_libraries(external_sort dl)
 endif()

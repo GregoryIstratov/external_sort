@@ -12,62 +12,61 @@ template<typename T>
 class task_management_unit
 {
 public:
-        explicit task_management_unit(raw_file_reader&& fr,
+        explicit task_management_unit(std::unique_ptr<mapped_file>&& input_file,
                                       size_t max_chunk_size,
                                       size_t n_way_merge
-        )        : fr_(std::move(fr)),
+        )        : input_file_(std::move(input_file)),
                   max_chunk_size_(max_chunk_size),
                   n_way_merge_(n_way_merge),
                   active_tasks_(0)
         {
         }
 
-        chunk_sort_task<T> next_sorting_task(std::unique_lock<std::mutex>& lock)
+        chunk_sort_task<T>
+        next_sorting_task(std::unique_lock<std::mutex>& lock)
         {
                 static std::atomic<int> id(0);
 
-                std::vector<T> buff(max_chunk_size_ / sizeof(T));
+                std::unique_ptr<mapped_file> chunk_file;
+                chunk_id new_id(0, id++);
 
                 {
                         unique_guard<std::mutex> lk_(lock);
 
-                        if (!fr_.is_open() || fr_.eof())
+                        if (!input_file_)
+                                return chunk_sort_task<T>();
+
+                        std::size_t remained = input_file_->size() - gpos_;
+
+                        if (remained == 0)
                         {
+                                input_file_.reset();
                                 return chunk_sort_task<T>();
                         }
 
-                        uint64_t read = fr_.read(
-                                reinterpret_cast<char*>(&buff[0]),
-                                max_chunk_size_);
+                        std::size_t chunk_size = std::min(remained, 
+                                                          max_chunk_size_);
 
-                        if (read != max_chunk_size_) {
-                                if (read == 0) {
+                        auto filename = new_id.to_full_filename();
+                        chunk_file = input_file_->range(gpos_, chunk_size)
+                                     ->map_to_new_file(filename.c_str());
 
-                                        fr_.close();
-                                        return chunk_sort_task<T>();
-                                }
-
-                                if (fr_.eof())
-                                        fr_.close();
-
-                                size_t n = read / sizeof(T);
-                                buff.erase(buff.begin() + n, buff.end());
+                        gpos_ += chunk_size;
+                      
+                        if (chunk_size < max_chunk_size_) 
+                        {
+                                input_file_.reset();
                         }
                 }
 
-
-                return chunk_sort_task<T>(std::move(buff), chunk_id(0, id++));
+                return chunk_sort_task<T>(std::move(chunk_file), std::move(new_id));
         }
 
         void save(std::unique_lock<std::mutex>& lock, chunk_sort_task<T>&& task)
         {
-                auto name = task.id().to_full_filename();
-
                 //perf_timer("Saving sort task", [&name, &task]() {
-                file_write(name.c_str(), task.data(), task.size());
-                //});
-
                 task.release();
+                //});
 
                 unique_guard<std::mutex> lk(lock);
 
@@ -152,7 +151,9 @@ public:
         chunk_id result_id() const { return result_id_; }
 private:
         std::condition_variable sync_cv_;
-        raw_file_reader fr_;
+        std::unique_ptr<mapped_file> input_file_;
+
+        std::size_t gpos_ = 0;
 
         const size_t max_chunk_size_;
         const size_t n_way_merge_;
