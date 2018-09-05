@@ -84,7 +84,7 @@ constexpr const char* CONFIG_OUTPUT_FILENAME = "output";
 constexpr const char  CONFIG_CHUNK_NAME_SEP = '_';
 constexpr const char* CONFIG_CHUNK_DIR = "chunks";
 
-constexpr auto CONFIG_REMOVE_TMP_FILES = config::ON;
+constexpr auto CONFIG_REMOVE_TMP_FILES = config::OFF;
 
 constexpr auto CONFIG_USE_MMAP = config::ON;
 
@@ -144,7 +144,7 @@ constexpr auto CONFIG_ENABLE_STACKTRACE = config::OFF;
  * TEST SECTION
  *****************************************************************************/
 
-constexpr auto CONFIG_GENERATE_TEST_FILE = config::ON;
+constexpr auto CONFIG_GENERATE_TEST_FILE = config::OFF;
 
 constexpr auto CONFIG_SKIP_SORT = config::conflicts_with(
                                         CONFIG_GENERATE_TEST_FILE, config::OFF);
@@ -169,4 +169,4 @@ enum
 
 constexpr int CONFIG_TEST_FILE_TYPE = CONFIG_TEST_FILE_SHUFFLE;
 
-constexpr uint64_t CONFIG_TEST_FILE_SIZE = 35_GiB;
+constexpr uint64_t CONFIG_TEST_FILE_SIZE = 1500_MiB;

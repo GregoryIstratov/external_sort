@@ -6,6 +6,12 @@
 
 struct mapped_file;
 
+enum class madvice
+{
+        sequential,
+        random
+};
+
 struct mapped_range
 {
         virtual ~mapped_range() = default;
@@ -13,6 +19,7 @@ struct mapped_range
         virtual void lock() = 0;
         virtual void unlock() = 0;
         virtual void sync() = 0;
+        virtual void advise(madvice adv) = 0;
 
         virtual std::unique_ptr<mapped_file> 
         map_to_new_file(const char* filename) = 0;
@@ -57,6 +64,8 @@ public:
         void unlock() override;
 
         void sync() override;
+
+        void advise(madvice adv) override;
 
         std::unique_ptr<mapped_file> map_to_new_file(const char* filename) override;
 

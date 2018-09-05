@@ -9,6 +9,19 @@
 #include "util.hpp"
 #include "exception.hpp"
 
+int madvace2posix(madvice adv)
+{
+        switch (adv)
+        {
+        case madvice::sequential:
+                return MADV_SEQUENTIAL;
+        case madvice::random:
+                return MADV_RANDOM;
+        default:
+                THROW_EXCEPTION << "Unknown arg";
+        }
+}
+
 posix_mapped_range::posix_mapped_range(void* mem, std::size_t len) noexcept
         : mem_(mem), len_(len), locked_(false)
 {
@@ -51,6 +64,12 @@ void posix_mapped_range::sync()
 {
         if (msync(mem_, len_, MS_SYNC) == -1)
                 THROW_EXCEPTION << "Sync failed:" << put_errno;
+}
+
+void posix_mapped_range::advise(madvice adv)
+{
+        if (madvise(mem_, len_, madvace2posix(adv)) == -1)
+                THROW_EXCEPTION << "madvise error";
 }
 
 std::unique_ptr<mapped_file> posix_mapped_range::map_to_new_file(
@@ -103,9 +122,6 @@ void posix_mapped_file::open(const char* filename, std::ios::openmode mode)
 
                 THROW_FILE_EXCEPTION(filename_) << "mmap failed";
         }
-
-        if (madvise(map_, size_, MADV_SEQUENTIAL) == -1)
-                THROW_FILE_EXCEPTION(filename_) << "madvise error";
 }
 
 void posix_mapped_file::open(const char* filename, std::size_t size,

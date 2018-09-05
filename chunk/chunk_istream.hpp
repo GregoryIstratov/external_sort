@@ -273,10 +273,8 @@ public:
                 open(id().to_full_filename(), buff_size);
         }
 
-        void open(std::string&& filename, size_t buff_size)
+        void open(std::string&& filename, size_t)
         {
-                width_n_ = get_buff_elem_n(buff_size);
-
                 file_->open(filename.c_str(), std::ios::in);
 
                 auto file_size = file_->size();
@@ -288,9 +286,10 @@ public:
 
                 size_n_ = file_size / sizeof(T);
 
-                if (!load_next_window())
-                        THROW_EXCEPTION << "Can't read the file " << filename
-                                << " seems like it's empty";
+                range_ = file_->range();
+                range_->advise(madvice::random);
+
+                data_ = reinterpret_cast<const T*>(range_->data());
         }
 
         const T& value() const { return data_[cur_]; }
@@ -298,20 +297,10 @@ public:
         bool next()
         {
                 ++cur_;
-                if (cur_ < width_n_)
-                {
-                        return true;
-                }
-                else
-                {
-                        if(!load_next_window())
-                                return false;
-
-                        return true;
-                }
+                return cur_ < size_n_;
                 
         }
-        bool eof() const { return cur_ >= width_n_; }
+        bool eof() const { return cur_ >= size_n_; }
 
         void release() noexcept
         {
@@ -334,7 +323,7 @@ public:
         uint64_t size() const { return size_n_ * sizeof(T); }
         uint64_t count() const { return size_n_; }
 
-        size_t buff_size() const { return width_n_ * sizeof(T); }
+        size_t buff_size() const { return 4096; }
 
 private:
         static constexpr size_t get_buff_elem_n(size_t buff_size)
@@ -348,31 +337,6 @@ private:
 
                 return buff_size / elem_size;
         }
-
-        bool load_next_window()
-        {
-                width_n_ = std::min(width_n_, size_n_ - offset_);
-
-                if (width_n_ == 0)
-                {
-                        if (IS_ENABLED(CONFIG_DEBUG))
-                        {
-                                if (!range_)
-                                        THROW_EXCEPTION << "Trying to read after EOF";
-                        }
-                        range_.reset();
-                        return false;
-                }
-
-                range_ = file_->range(offset_ * sizeof(T), width_n_ * sizeof(T));
-                range_->lock();
-                data_ = reinterpret_cast<const T*>(range_->data());
-
-                offset_ += width_n_;
-                cur_ = 0;
-
-                return true;
-        }
 private:
         chunk_id id_;
 
@@ -380,8 +344,7 @@ private:
         mapped_range_uptr range_;
 
         const T* data_ = nullptr;
-        std::size_t size_n_ = 0, width_n_ = 0;
-        std::size_t offset_ = 0, cur_ = 0;
+        std::size_t size_n_ = 0, cur_ = 0;
 };
 
 

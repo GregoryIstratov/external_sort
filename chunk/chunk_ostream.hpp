@@ -145,25 +145,21 @@ public:
         _chunk_ostream(_chunk_ostream&&) = default;
         _chunk_ostream& operator=(_chunk_ostream&&) = default;
 
-        void open(size_t buff_size, uint64_t output_size)
+        void open(size_t, uint64_t output_size)
         {
-                width_n_ = buff_size / sizeof(T);
                 size_n_  = output_size / sizeof(T);
 
                 file_->open(filename_.c_str(), size_n_ * sizeof(T),
                             std::ios::out | std::ios::trunc);
 
-                if (!load_next_window())
-                        THROW_EXCEPTION << "load_next_window failed " << filename_;
+                range_ = file_->range();
+                range_->advise(madvice::sequential);
+
+                data_ = reinterpret_cast<T*>(range_->data());
         }
 
         void put(T v)
         {
-                if (cur_ >= width_n_)
-                {
-                        load_next_window();
-                }
-
                 data_[cur_++] = v;
         }
 
@@ -173,39 +169,13 @@ public:
                 file_.reset();
         }
 
-        size_t buff_size() const { return width_n_ * sizeof(T); }
+        size_t buff_size() const { return 4096; }
 
         void filename(const std::string& value) { filename_ = value; }
         std::string filename() const { return filename_; }
 private:
         friend class _chunk_istream<T, chunk_stream_stdio>;
 
-        //TODO move it to a base class with chunk_istream
-        bool load_next_window()
-        {
-                width_n_ = std::min(width_n_, size_n_ - offset_);
-
-                if (width_n_ == 0)
-                {
-                        if(IS_ENABLED(CONFIG_DEBUG))
-                        {
-                                if (!range_)
-                                        THROW_EXCEPTION << "Trying to write after EOF";
-                        }
-
-                        range_.reset();
-                        return false;
-                }
-
-                range_ = file_->range(offset_ * sizeof(T), width_n_ * sizeof(T));
-                range_->lock();
-                data_ = reinterpret_cast<T*>(range_->data());
-
-                offset_ += width_n_;
-                cur_ = 0;
-
-                return true;
-        }
 private:
         chunk_id id_;
 
@@ -213,8 +183,7 @@ private:
         mapped_range_uptr range_;
 
         T* data_ = nullptr;
-        std::size_t size_n_ = 0, width_n_ = 0;
-        std::size_t offset_ = 0, cur_ = 0;
+        std::size_t size_n_ = 0, cur_ = 0;
 
         std::string filename_;
 };
