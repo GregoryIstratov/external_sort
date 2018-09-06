@@ -268,14 +268,15 @@ public:
 
                 size_n_ = size / sizeof(T);
 
-                range_->advise(madvice::normal);
+                range_->advise(madvice::sequential);
 
                 data_ = reinterpret_cast<const T*>(range_->data());
         }
 
         ~_chunk_istream()
         {
-                release();
+                if (range_)
+                        release();
         }
 
         _chunk_istream(_chunk_istream&& o) = default;
@@ -292,7 +293,7 @@ public:
         }
         bool eof() const { return cur_ >= size_n_; }
 
-        void release() noexcept
+        void release()
         {
                 range_.reset();
         }

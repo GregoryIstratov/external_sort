@@ -10,7 +10,8 @@ enum class madvice
 {
         normal,
         sequential,
-        random
+        random,
+        dontneed
 };
 
 struct mapped_range

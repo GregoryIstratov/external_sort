@@ -278,7 +278,10 @@ private:
                                 std::push_heap(heap.begin(), heap.end());
                         }
                         else
+                        {
+                                heap.back().is->release();
                                 heap.pop_back();
+                        }
                         
 
                         if (heap.size() == 1)
@@ -288,6 +291,7 @@ private:
                                 if(heap.back().is->next())
                                         copy_to_output(*heap.back().is);
 
+                                heap.back().is->release();
                                 heap.pop_back();
                         }
                 }

@@ -19,9 +19,14 @@ int madvace2posix(madvice adv)
                 return MADV_SEQUENTIAL;
         case madvice::random:
                 return MADV_RANDOM;
+        case madvice::dontneed:
+                return MADV_DONTNEED;
+        default:
+                THROW_EXCEPTION << "Unknown arg";
         }
 
-        THROW_EXCEPTION << "Unknown arg";
+        //avoid compiler warning
+        return -1;
 }
 
 posix_mapped_range::posix_mapped_range(void* mem, std::size_t len) noexcept
@@ -71,7 +76,7 @@ void posix_mapped_range::sync()
 void posix_mapped_range::advise(madvice adv)
 {
         if (madvise(mem_, len_, madvace2posix(adv)) == -1)
-                THROW_EXCEPTION << "madvise error";
+                THROW_EXCEPTION << "madvise error:" << put_errno;
 }
 
 std::unique_ptr<mapped_file> posix_mapped_range::map_to_new_file(
@@ -120,10 +125,13 @@ void posix_mapped_file::open(const char* filename, std::ios::openmode mode)
         if (map_ == MAP_FAILED)
         {
                 ::close(fd_);
-                fd_ = 0;
+                fd_ = -1;
 
                 THROW_FILE_EXCEPTION(filename_) << "mmap failed";
         }
+
+        ::close(fd_);
+        fd_ = -1;
 }
 
 void posix_mapped_file::open(const char* filename, std::size_t size,
@@ -156,24 +164,19 @@ void posix_mapped_file::open(const char* filename, std::size_t size,
         if (map_ == MAP_FAILED)
         {
                 ::close(fd_);
-                fd_ = 0;
+                fd_ = -1;
 
                 THROW_FILE_EXCEPTION(filename_) << "mmap failed";
         }
 
-        if (madvise(map_, size_, MADV_SEQUENTIAL) == -1)
-                THROW_FILE_EXCEPTION(filename_) << "madvise error";
+        ::close(fd_);
+        fd_ = -1;
 }
 
 posix_mapped_file::~posix_mapped_file()
 {
-        if (fd_ >= 0)
-        {
-                if (map_)
-                        ::munmap(map_, size_);
-
-                ::close(fd_);
-        }
+        if (map_ != MAP_FAILED)
+                ::munmap(map_, size_);
 }
 
 void posix_mapped_file::copy(posix_mapped_file& dest)
@@ -241,7 +244,7 @@ posix_mapped_file::posix_mapped_file(posix_mapped_file&& o) noexcept
 
 bool posix_mapped_file::is_open() const
 {
-        return fd_ != -1 && map_ != MAP_FAILED;
+        return map_ != MAP_FAILED;
 }
 
 
