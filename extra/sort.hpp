@@ -20,9 +20,6 @@ Phil Endecott and Frank Gennari
 #include <functional>
 #include <cstdint>
 
-#include <boost/range/begin.hpp>
-#include <boost/range/end.hpp>
-
 #define BOOST_STATIC_ASSERT( ... ) static_assert(__VA_ARGS__, #__VA_ARGS__)
 
 namespace sort
