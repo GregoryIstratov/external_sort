@@ -3,6 +3,8 @@
 #include <string>
 #include <sstream>
 #include <thread>
+#include <cstring>
+#include <cerrno>
 
 #if __BOOST_FOUND
 #include <boost/stacktrace.hpp>
