@@ -124,7 +124,7 @@ constexpr int CONFIG_TREE_HEIGH = 2;
 constexpr size_t PAGE_SIZE = 4096;
 
 /* -x MiB for program itself and some part of each thread stack*/
-constexpr size_t CONFIG_MEM_AVAIL = 128_MiB;
+constexpr size_t CONFIG_MEM_AVAIL = 100_MiB;
 //constexpr size_t CONFIG_MEM_AVAIL = 512;
 
 constexpr float CONFIG_IO_BUFF_RATIO = 0.5f;
@@ -144,14 +144,14 @@ constexpr auto CONFIG_ENABLE_STACKTRACE = config::OFF;
  * TEST SECTION
  *****************************************************************************/
 
-constexpr auto CONFIG_GENERATE_TEST_FILE = config::ON;
+constexpr auto CONFIG_GENERATE_TEST_FILE = config::OFF;
 
 constexpr auto CONFIG_SKIP_SORT = config::conflicts_with(
                                         CONFIG_GENERATE_TEST_FILE, config::OFF);
 
-constexpr auto CONFIG_REMOVE_RESULT = config::ON;
+constexpr auto CONFIG_REMOVE_RESULT = config::OFF;
 
-constexpr auto CONFIG_CHECK_RESULT = config::ON;
+constexpr auto CONFIG_CHECK_RESULT = config::OFF;
 
 constexpr auto CONFIG_CHECK_HASH = config::ON;
 
