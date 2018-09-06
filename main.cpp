@@ -91,7 +91,10 @@ size_t get_thread_number()
 {
         auto n = std::thread::hardware_concurrency();
 
-        return n != 0 ? n : CONFIG_DEFAULT_THREAD_NUMBER;
+        if(IS_ENABLED(CONFIG_SORT_PARALLEL))
+                return 1;
+        else
+                return n != 0 ? n : CONFIG_DEFAULT_THREAD_NUMBER;
 }
 
 uint32_t get_nway_merge_n(uint64_t cn)
@@ -295,8 +298,13 @@ try
         uint64_t thr_mem = mem_avail / ncpu;
         uint64_t l0_chunk_size  = thr_mem;
 
-        if(mem_avail >= input_filesize)
-                l0_chunk_size = input_filesize / (threads_n * 2);
+        if (mem_avail >= input_filesize)
+        {
+                if (IS_ENABLED(CONFIG_SORT_PARALLEL))
+                        l0_chunk_size = input_filesize;
+                else
+                        l0_chunk_size = input_filesize / (threads_n * 2);
+        }
 
         uint64_t chunk_number   = input_filesize / l0_chunk_size;
         uint32_t merge_n = get_nway_merge_n(chunk_number);

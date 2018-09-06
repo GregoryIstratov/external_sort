@@ -11,6 +11,8 @@
 #include "extra/sort.hpp"
 #include "tools/mapped_file.hpp"
 
+#include <boost/sort/block_indirect_sort/block_indirect_sort.hpp>
+
 template<typename T>
 class chunk_sort_task
 {
@@ -85,6 +87,10 @@ private:
                                 radix_sort(data, size);
                                 break;
 
+                        case CONFIG_SORT_BLOCK_INDIRECT:
+                                block_indirect_sort(data, size);
+                                break;
+
                         default:
                                 THROW_EXCEPTION << "Unknown option";
                 }
@@ -104,6 +110,11 @@ private:
         void radix_sort(T* data, std::size_t size)
         {
                 sort::integer_sort(data, data + size);
+        }
+
+        void block_indirect_sort(T* data, std::size_t size)
+        {
+                boost::sort::block_indirect_sort(data, data + size);
         }
 
 private:

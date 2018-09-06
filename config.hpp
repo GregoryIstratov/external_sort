@@ -100,10 +100,14 @@ enum
 {
         CONFIG_SORT_HEAP,
         CONFIG_SORT_STD,
-        CONFIG_SORT_RADIX
+        CONFIG_SORT_RADIX,
+        CONFIG_SORT_BLOCK_INDIRECT
 };
 
-constexpr int CONFIG_SORT_ALGO = CONFIG_SORT_RADIX;
+constexpr int CONFIG_SORT_ALGO = CONFIG_SORT_BLOCK_INDIRECT;
+
+constexpr auto CONFIG_SORT_PARALLEL = config::option(CONFIG_SORT_ALGO 
+                                                == CONFIG_SORT_BLOCK_INDIRECT);
 
 /******************************************************************************
 * MERGE SECTION
@@ -124,7 +128,7 @@ constexpr int CONFIG_TREE_HEIGH = 2;
 constexpr size_t PAGE_SIZE = 4096;
 
 /* -x MiB for program itself and some part of each thread stack*/
-constexpr size_t CONFIG_MEM_AVAIL = 512_MiB;
+constexpr size_t CONFIG_MEM_AVAIL = 128_MiB;
 //constexpr size_t CONFIG_MEM_AVAIL = 512;
 
 constexpr float CONFIG_IO_BUFF_RATIO = 0.3f;

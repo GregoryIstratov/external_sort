@@ -32,6 +32,8 @@ if(Boost_FOUND)
     include_directories(${Boost_INCLUDE_DIRS})  
 endif()
 
+include_directories(boost_sort/include)
+
 add_executable(external_sort main.cpp 
                              task_tree.hpp 
                              config.hpp 
