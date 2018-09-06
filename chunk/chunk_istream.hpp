@@ -267,9 +267,6 @@ public:
                         << sizeof(T);
 
                 size_n_ = size / sizeof(T);
-
-                range_->advise(madvice::sequential);
-
                 data_ = reinterpret_cast<const T*>(range_->data());
         }
 
@@ -282,6 +279,10 @@ public:
         _chunk_istream(_chunk_istream&& o) = default;
         _chunk_istream& operator=(_chunk_istream&& o) = default;
 
+	void open()
+	{
+                range_->advise(madvice::sequential);
+	}
 
         const T& value() const { return data_[cur_]; }
 
@@ -295,6 +296,7 @@ public:
 
         void release()
         {
+		range_->advise(madvice::dontneed);
                 range_.reset();
         }
 

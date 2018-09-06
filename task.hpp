@@ -148,6 +148,7 @@ public:
                 uint64_t output_size = 0;
                 for (auto& is : input_)
                 {
+			is.open();
                         output_size += is.size();
                 }
 
