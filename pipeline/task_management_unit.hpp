@@ -141,7 +141,7 @@ private:
         const std::size_t input_size_;
         mapped_file_uptr output_file_;
 
-        std::atomic_uint64_t gpos_;
+        std::atomic<uint64_t> gpos_;
 
         const size_t max_chunk_size_;
         const size_t n_way_merge_;
@@ -153,5 +153,5 @@ private:
         chunk_id::lvl_t last_lvl_ = 1;
         chunk_id result_id_;
 
-        std::atomic_uint32_t active_tasks_;
+        std::atomic<uint32_t> active_tasks_;
 };

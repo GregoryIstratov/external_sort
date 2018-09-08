@@ -112,10 +112,10 @@ private:
         sorting_unit<T> sort_unit_;
         merging_unit<T> merge_unit_;
 
-        static std::atomic_uint32_t active_pipelines_;
+        static std::atomic<uint32_t> active_pipelines_;
 
 };
 
 template<typename T>
-std::atomic_uint32_t pipeline<T>::active_pipelines_(0);
+std::atomic<uint32_t> pipeline<T>::active_pipelines_(0);
 
