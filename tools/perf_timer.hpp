@@ -10,6 +10,10 @@ public:
         using ms = std::chrono::milliseconds;
         using ns = std::chrono::nanoseconds;
 
+        struct _join {};
+
+        static const _join join;
+
         perf_timer() = default;
 
         perf_timer(const char* const msg, std::function<void()>&& fn)
@@ -17,13 +21,33 @@ public:
                 using std::chrono::duration_cast;
                 using std::chrono::milliseconds;
 
+                info() << msg << "...";
+
                 start();
 
                 fn();
 
                 end();
 
-                info2() << msg << " "
+                info() << msg << " is done for "
+                        << duration_cast<milliseconds>(end_ - start_).count()
+                        << " ms";
+        }
+
+        perf_timer(const char* const msg, _join, std::function<void()>&& fn)
+        {
+                using std::chrono::duration_cast;
+                using std::chrono::milliseconds;
+
+                info() << msg << "... " << logging::fmt_clear(logging::fmt::endl);
+
+                start();
+
+                fn();
+
+                end();
+
+                info2() << logging::fmt_set(logging::fmt::append) 
                         << duration_cast<milliseconds>(end_ - start_).count()
                         << " ms";
         }

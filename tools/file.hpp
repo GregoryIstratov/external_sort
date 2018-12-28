@@ -42,15 +42,14 @@ void gen_rnd_test_file(const char* filename, uint64_t size)
         static_assert(std::is_integral<T>::value, "T must be integral");
 
         if (size % sizeof(T))
-                THROW_EXCEPTION("Size must be product of " << sizeof(T));
+                THROW_EXCEPTION << "Size must be product of " << sizeof(T);
 
         uint64_t N = size / sizeof(T);
 
         FILE *f = fopen(filename, "wb");
 
         if (!f)
-                THROW_EXCEPTION("Can't create the file '"
-                        << filename << "': " << strerror(errno));
+                THROW_FILE_EXCEPTION(filename) << "Cannot create the file";
 
         struct file_closer
         {
@@ -91,149 +90,6 @@ void make_rnd_file_from(std::vector<T>& arr, const char* filename)
         file_write(filename, arr.data(), arr.size() * sizeof(T));
 }
 
-class raw_file_buffer
-{
-protected:
-        raw_file_buffer()
-                : buffer_(PAGE_SIZE)
-        {                
-        }
-
-        void set_buffer_to(std::ios& ios)
-        {
-                ios.rdbuf()->pubsetbuf(&buffer_[0], buffer_.size());
-        }
-
-        std::vector<char> buffer_;
-};
-
-class raw_file_reader : protected raw_file_buffer
-{
-public:
-        explicit
-                raw_file_reader(std::string filename)
-                : filename_(std::move(filename))
-        {
-                is_.open(filename_, std::ios::in | std::ios::binary);
-
-                if (!is_)
-                        THROW_EXCEPTION("Cannot open the file '"
-                                << filename_
-                                << "': "
-                                << strerror(errno));
-
-                set_buffer_to(is_);
-                
-                is_.seekg(0, std::ios::end);
-                file_size_ = is_.tellg();
-                is_.seekg(0, std::ios::beg);
-        }
-
-        ~raw_file_reader()
-        {
-                close();
-        }
-
-
-        raw_file_reader(raw_file_reader&& o) noexcept
-                : is_(std::move(o.is_)),
-                filename_(std::move(o.filename_)),
-                file_size_(zero_move(o.file_size_)),
-                read_(zero_move(o.read_))
-        {
-        }
-
-        raw_file_reader& operator=(raw_file_reader&& o) = delete;
-
-        void close()
-        {
-                is_ = decltype(is_)();
-        }
-
-
-        std::streamsize read(char* buff, std::streamsize size)
-        {
-                is_.read(buff, size);
-
-                if (!is_.eof() && is_.bad())
-                        THROW_EXCEPTION("Cannot read the file '"
-                                << filename_
-                                << "': "
-                                << strerror(errno));
-
-                auto r = is_.gcount();
-                read_ += r;
-
-                return r;
-        }
-
-        bool is_open() const { return is_.is_open(); }
-
-        bool eof() const { return is_.eof() || read_ >= file_size_; }
-
-        std::string filename() const { return filename_; }
-        uint64_t file_size() const { return file_size_; }
-
-private:
-        std::ifstream is_;
-        std::string filename_;
-        uint64_t file_size_ = 0;
-        uint64_t read_ = 0;
-};
-
-class raw_file_writer : protected raw_file_buffer
-{
-public:
-        explicit
-                raw_file_writer(std::string filename)
-                : filename_(std::move(filename))
-        {
-                set_buffer_to(os_);
-
-                os_.open(filename_, std::ios::out | std::ios::trunc 
-                                    | std::ios::binary);
-
-                if (!os_)
-                        THROW_EXCEPTION("Cannot open the file '"
-                                << filename_
-                                << "': "
-                                << strerror(errno));
-        }
-
-        ~raw_file_writer()
-        {
-                close();
-        }
-
-        raw_file_writer(raw_file_writer&& o) noexcept
-                : os_(std::move(o.os_)),
-                filename_(std::move(o.filename_))
-        {
-        }
-
-        raw_file_writer& operator=(raw_file_writer&& o) = delete;
-
-        void close()
-        {
-                os_ = decltype(os_)();       
-        }
-
-        void write(const void* buff, std::size_t size)
-        {
-                os_.write((char*)buff, size);
-
-                if (os_.bad())
-                        THROW_EXCEPTION("Cannot write the file '"
-                                << filename_
-                                << "': "
-                                << strerror(errno));
-        }
-
-        std::string filename() const { return filename_; }
-private:
-        std::ofstream os_;
-        std::string filename_;
-};
 
 struct memory_mapped_file_source
 {
@@ -258,3 +114,127 @@ struct memory_mapped_file_sink
 
         static std::unique_ptr<memory_mapped_file_sink> create();
 };
+
+/*
+enum class file_io
+{
+        map,
+        raw,
+        native
+};
+
+template<typename T>
+class mapped_input_file;
+
+template<typename T>
+class raw_input_file;
+
+template<typename T>
+struct input_file
+{
+        virtual ~input_file() = default;
+
+        virtual void open(const char* filename) = 0;
+        virtual void close() = 0;
+        virtual std::unique_ptr<abstract_data_device<T>>
+                get_region(std::streamsize pos, std::streamsize n) = 0;
+
+        static std::unique_ptr<input_file<T>> create(file_io type)
+        {
+                switch (type)
+                {
+                case file_io::map:
+                        return std::make_unique<mapped_input_file<T>>();
+
+                case file_io::raw:
+                        return std::make_unique<raw_input_file<T>>();
+                }
+        }
+};
+
+template<typename T>
+class mapped_input_file : public input_file<T>
+{
+public:
+        mapped_input_file()
+                : source_(memory_mapped_file_source::create())
+        {
+                
+        }
+
+        void open(const char* filename) override
+        {
+                source_->open(filename);
+        }
+
+        void close() override
+        {
+                source_->close();
+        }
+
+        std::unique_ptr<source_data_device<T>>
+                get_region(std::streamsize pos, std::streamsize n) override
+        {
+                const T* data = reinterpret_cast<const T*>(source_->data() 
+                                                           + pos * sizeof(T));
+
+                return std::make_unique<mapped_source_data_device<T>>(data, n);
+        }
+
+private:
+        std::unique_ptr<memory_mapped_file_source> source_;
+};
+
+template<typename T>
+class raw_input_file : public input_file<T>
+{
+public:
+        void open(const char* filename) override
+        {
+                source_ = std::make_unique<raw_file_reader>(filename);
+        }
+
+        void close() override
+        {
+                source_->close();
+        }
+
+        std::unique_ptr<source_data_device<T>>
+                get_region(std::streamsize pos, std::streamsize n) override
+        {
+                std::vector<T> buff(n);
+
+                if (!source_->is_open() || source_->eof())
+                {
+                        return {};
+                }
+
+                auto to_read = n * sizeof(T);
+                uint64_t read = source_->read(reinterpret_cast<char*>(&buff[0]),
+                                              to_read);
+
+                if (read != to_read) 
+                {
+                        if (read == 0) 
+                        {
+                                source_->close();
+                                return {};
+                        }
+
+                        if (source_->eof())
+                                source_->close();
+
+                        size_t c = read / sizeof(T);
+                        buff.erase(buff.begin() + c, buff.end());
+                }
+                
+
+                return std::make_unique<buffered_source_data_device<T>>(
+                        std::move(buff)
+                        );
+        }
+
+private:
+        std::unique_ptr<raw_file_reader> source_;
+};
+*/

@@ -111,8 +111,9 @@ void check_result(uint64_t isz)
 {
         if (!IS_ENABLED(CONFIG_CHECK_HASH))
         {
-                chunk_istream<CONFIG_DATA_TYPE> res_is;
-                res_is.open(CONFIG_OUTPUT_FILENAME, CONFIG_MEM_AVAIL);
+                auto file = mapped_file::create();
+                file->open(CONFIG_OUTPUT_FILENAME, std::ios::in);
+                chunk_istream<CONFIG_DATA_TYPE> res_is(file->range(), chunk_id());
 
                 uint64_t sz = res_is.size();
                 if (isz == sz)
@@ -147,18 +148,25 @@ void check_result(uint64_t isz)
 
 void print_result()
 {
-        chunk_istream<CONFIG_DATA_TYPE> is;
-        is.open(CONFIG_OUTPUT_FILENAME, CONFIG_MEM_AVAIL);
+        auto file = mapped_file::create();
+        file->open(CONFIG_OUTPUT_FILENAME, std::ios::in);
+        chunk_istream<CONFIG_DATA_TYPE> is(file->range(), chunk_id());
 
         chunk_istream_iterator<CONFIG_DATA_TYPE> beg(is), end;
 
         std::stringstream ss;
 
+        std::size_t count = CONFIG_TEST_FILE_SIZE / sizeof(CONFIG_DATA_TYPE);
+        
+        ss << "Origin [";
+        for (size_t i = 0; i < count; ++i) ss << i << " ";
+        ss << "]" << std::endl;
+
         ss << "Result [";
         std::copy(beg, end, std::ostream_iterator<CONFIG_DATA_TYPE>(ss, " "));
         ss << "]" << std::endl;
 
-        info() << ss.rdbuf();
+        info() << "\n" << ss.rdbuf();
 }
 
 template<typename T>
@@ -180,9 +188,15 @@ void make_test_file()
                 info2() << "Generating " << size_format(CONFIG_TEST_FILE_SIZE)
                         << " test data..";
 
-                std::vector<T> arr(CONFIG_TEST_FILE_SIZE
-                        / sizeof(T));
+                auto file = mapped_file::create();
+                file->open(CONFIG_INPUT_FILENAME, CONFIG_TEST_FILE_SIZE, 
+                           std::ios::out | std::ios::trunc);
 
+                auto range = file->range();
+                range->lock();
+
+                auto arr = reinterpret_cast<T*>(range->data());
+                std::size_t count = range->size() / sizeof(T);
 
                 auto i = std::numeric_limits<T>::min();
 
@@ -191,23 +205,38 @@ void make_test_file()
 
                 static_assert(!check, "T is signed and there will be an overflow");
 
-                for (auto& v : arr)
-                        v = i++;                
+                for (std::size_t idx = 0; idx < count; ++idx)
+                        arr[idx] = i++;                
 
                 info2() << "Computing hash of test data..."
                         << fmt_clear(fmt::endl);
 
                 hasher_crc64 hasher;
-                hasher.put(arr);
-                auto hash = hasher.hash();
+                hasher.put(range->data(), range->size());
+                const auto hash = hasher.hash();
 
                 info2() << fmt_set(fmt::append) << ": " << hash;
 
                 file_write(CONFIG_ORIGIN_HASH_FILENAME, hash.data(), hash.size());
 
-                info2() << "Writing test file...";
+                //make_rnd_file_from(arr, CONFIG_INPUT_FILENAME);
 
-                make_rnd_file_from(arr, CONFIG_INPUT_FILENAME);
+                perf_timer("Shuffling test data", perf_timer::join, 
+                [arr, count]()
+                {
+                        std::random_device rd;
+                        std::mt19937 g(rd());
+
+                        std::shuffle(arr, arr + count, g);
+                });
+
+                perf_timer("Saving test data", perf_timer::join,
+                [&]()
+                {
+                        range.reset();
+                        file.reset();
+                });
+
                 break;
         }
 
@@ -219,7 +248,7 @@ void make_test_file()
         }
 
         default:
-                THROW_EXCEPTION("Unknown test file type");
+                THROW_EXCEPTION << "Unknown test file type";
         }
 }
 
@@ -236,6 +265,8 @@ try
 
         logging::logger::enable_file_logging("external_sort.log");
 
+        info() << "Execution path: " << argv[0];
+
         info() << "Boost Enabled";
 
         init_enviroment();
@@ -249,11 +280,16 @@ try
         else if (argc > 1)
                 input_filename = argv[1];
 
-        raw_file_reader input_fr(input_filename);
+        auto input_file = mapped_file::create();
+        input_file->open(input_filename.c_str(), std::ios::in | std::ios::out);
+
+        auto output_file = mapped_file::create();
+        output_file->open(CONFIG_OUTPUT_FILENAME, input_file->size(),
+                         std::ios::out | std::ios::trunc);
 
         size_t threads_n = get_thread_number();
 
-        uint64_t input_filesize  = input_fr.file_size();
+        uint64_t input_filesize  = input_file->size();
         uint64_t ncpu = threads_n;
         uint64_t mem_avail  = CONFIG_MEM_AVAIL;
         uint64_t thr_mem = mem_avail / ncpu;
@@ -292,21 +328,21 @@ try
 
         /*check constrains */
         if (input_buff_size < sizeof(data_t))
-                THROW_EXCEPTION("Input buffer size is too small = " 
-                                << size_format(input_buff_size));
+                THROW_EXCEPTION << "Input buffer size is too small = " 
+                                << size_format(input_buff_size);
 
         if (output_buff_size < sizeof(data_t))
-                THROW_EXCEPTION("Output buffer size is too small = "
-                        << size_format(output_buff_size));
+                THROW_EXCEPTION << "Output buffer size is too small = "
+                        << size_format(output_buff_size);
 
         /* main unit in the program */
         pipeline_controller<data_t> controller(
-                              std::move(input_fr),
+                              std::move(input_file),
+                              std::move(output_file),
                               l0_chunk_size, merge_n, 
                               (uint32_t)threads_n, 
                               mem_avail, 
-                              io_ratio,
-                              CONFIG_OUTPUT_FILENAME
+                              io_ratio
         );
 
         perf_timer("Finished for", [&controller](){

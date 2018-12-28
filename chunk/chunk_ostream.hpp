@@ -2,7 +2,9 @@
 
 #include <vector>
 #include "../tools/exception.hpp"
+#include "../tools/mapped_file.hpp"
 #include "chunk_stream.hpp"
+
 
 template<typename T>
 class _chunk_ostream<T, chunk_stream_cpp>
@@ -32,8 +34,7 @@ public:
                         | std::ios::binary);
 
                 if (!os_)
-                        THROW_EXCEPTION("Can't open file '" << filename_
-                                << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename_) << "Cannot open the file";
 
                 os_.rdbuf()->pubsetbuf(&buff_[0], buff_size);
         }
@@ -90,8 +91,7 @@ public:
 
                 os_ = fopen(filename_.c_str(), "wb");
                 if (!os_)
-                        THROW_EXCEPTION("Can't open file '" << filename_
-                                        << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename_) << "Cannot open the file";
 
                 setvbuf(os_, &buff_[0], _IOFBF, buff_size);
         }
@@ -132,10 +132,14 @@ class _chunk_ostream<T, chunk_stream_mmap>
 public:
         _chunk_ostream() = default;
 
-        explicit _chunk_ostream(std::string&& filename)
-                : filename_(std::move(filename))
+        explicit _chunk_ostream(mapped_file_uptr&& output_file)
+                : file_(std::move(output_file))
+        {
+                range_ = file_->range();
+                range_->advise(madvice::sequential);
 
-        {}
+                data_ = reinterpret_cast<T*>(range_->data());
+        }
 
         ~_chunk_ostream()
         {
@@ -145,43 +149,30 @@ public:
         _chunk_ostream(_chunk_ostream&&) = default;
         _chunk_ostream& operator=(_chunk_ostream&&) = default;
 
-        void open(size_t buff_size, uint64_t output_size)
-        {
-                buff_size_ = buff_size;
-                //buff_.resize(buff_size);
-
-                sink_->open(filename_.c_str(), output_size, 0, true);
-
-                data_ = reinterpret_cast<T*>(sink_->data());
-        }
 
         void put(T v)
         {
-                *data_++ = v;
+                data_[cur_++] = v;
         }
 
         void close() noexcept
         {
-                sink_.reset();
-                buff_ = std::vector<char>();
+                range_.reset();
+                file_.reset();
         }
 
-        size_t buff_size() const { return buff_size_; }
-
-        void filename(const std::string& value) { filename_ = value; }
-        std::string filename() const { return filename_; }
+        size_t buff_size() const { return 4096; }
 private:
         friend class _chunk_istream<T, chunk_stream_stdio>;
 
 private:
-        using file_sink = memory_mapped_file_sink;
-        using file_sink_ptr = std::unique_ptr<file_sink>;
+        chunk_id id_;
 
-        std::vector<char> buff_;
-        file_sink_ptr sink_ = file_sink::create();
-        std::string filename_;
-        size_t buff_size_ = 0;
+        mapped_file_uptr file_;
+        mapped_range_uptr range_;
+
         T* data_ = nullptr;
+        std::size_t size_n_ = 0, cur_ = 0;
 };
 
 template<typename T>

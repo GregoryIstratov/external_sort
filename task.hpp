@@ -8,6 +8,8 @@
 #include "chunk/chunk_id.hpp"
 #include "chunk/chunk_istream.hpp"
 #include "chunk/chunk_ostream.hpp"
+#include "extra/sort.hpp"
+#include "tools/mapped_file.hpp"
 
 template<typename T>
 class chunk_sort_task
@@ -16,8 +18,8 @@ public:
         chunk_sort_task() = default;
 
         explicit
-        chunk_sort_task(std::vector<T>&& data, chunk_id id)
-                : data_(std::move(data)), id_(std::move(id))
+        chunk_sort_task(std::unique_ptr<mapped_range>&& file, chunk_id id)
+                : range_(std::move(file)), id_(std::move(id))
         {}
 
         chunk_sort_task(chunk_sort_task&&) noexcept = default;
@@ -26,62 +28,86 @@ public:
         void execute()
         {
                 perf_timer tm;
-
                 tm.start();
 
-                sort();
+                range_->lock();
+
+                T* data = reinterpret_cast<T*>(range_->data());
+                std::size_t size = range_->size() / sizeof(T);
+
+                sort(data, size);
+
+                range_->unlock();
 
                 tm.end();
 
                 info2() << "sorted " << id_
-                        << " (" << size_format(size())
-                        << "/" << num_format(count()) << ") for "
+                        << " (" << size_format(range_->size())
+                        << "/" << num_format(size) << ") for "
                         << tm.elapsed<perf_timer::ms>() << " ms";
+
+                if (IS_ENABLED(CONFIG_PRINT_CHUNK_DATA))
+                {
+                        std::stringstream ss;
+                        ss << "[";
+
+                        for (size_t i = 0; i < size; ++i)
+                                ss << data[i] << " ";
+
+                        ss << "]";
+                        info2() << id_ << " data: " << ss.rdbuf();
+                }
         }
 
-        void release()
+        std::unique_ptr<mapped_range> acquire_mapped_mem()
         {
-                data_ = std::vector<T>();
+                return std::move(range_);
         }
 
-        bool empty() { return data_.empty(); }
+        bool empty() const { return !range_; }
 
         chunk_id id() const { return id_; }
-        const auto* data() const { return &data_[0]; }
-        size_t size() const { return data_.size() * sizeof(T); }
-        size_t count() const { return data_.size(); }
 
 private:
-        void sort()
+        void sort(T* data, std::size_t size)
         {
                 switch(CONFIG_SORT_ALGO)
                 {
                         case CONFIG_SORT_STD:
-                                std_sort();
+                                std_sort(data, size);
                                 break;
 
                         case CONFIG_SORT_HEAP:
-                                heap_sort();
+                                heap_sort(data, size);
+                                break;
+
+                        case CONFIG_SORT_RADIX:
+                                radix_sort(data, size);
                                 break;
 
                         default:
-                                THROW_EXCEPTION("Unknown option");
+                                THROW_EXCEPTION << "Unknown option";
                 }
         }
 
-        void heap_sort()
+        void heap_sort(T* data, std::size_t size)
         {
-                std::make_heap(data_.begin(), data_.end());
-                std::sort_heap(data_.begin(), data_.end());
+                std::make_heap(data, data + size);
+                std::sort_heap(data, data + size);
         }
 
-        void std_sort()
+        void std_sort(T* data, std::size_t size)
         {
-                std::sort(data_.begin(), data_.end());
+                std::sort(data, data + size);
+        }
+
+        void radix_sort(T* data, std::size_t size)
+        {
+                sort::integer_sort(data, data + size);
         }
 
 private:
-        std::vector<T> data_;
+        std::unique_ptr<mapped_range> range_;
         chunk_id id_;
 };
 
@@ -92,11 +118,9 @@ public:
         chunk_merge_task() = default;
 
         chunk_merge_task(std::vector<chunk_istream<T>>&& input,
-                         chunk_ostream<T>&& output,
-                         chunk_id output_id)
+                         chunk_ostream<T>&& output)
                 : input_(std::move(input)),
-                  output_(std::move(output)),
-                  output_id_(std::move(output_id))
+                  output_(std::move(output))
         {
         }
 
@@ -115,20 +139,18 @@ public:
                 size_t ock_mem = round_down(out_buff_size, sizeof(T));
 
                 if(!ick_mem || !ock_mem)
-                        THROW_EXCEPTION("No memory for buffers [ick_mem="
+                        THROW_EXCEPTION << "No memory for buffers [ick_mem="
                                                               << ick_mem
                                                               << " ock_mem="
                                                               << ock_mem
-                                                              << "]");
+                                                              << "]";
 
                 uint64_t output_size = 0;
                 for (auto& is : input_)
                 {
-                        is.open(ick_mem);
+			is.open();
                         output_size += is.size();
                 }
-
-                output_.open(ock_mem, output_size);
 
                 if(CONFIG_INFO_LEVEL >= 2)
                 {
@@ -164,11 +186,6 @@ public:
         std::string debug_str() const { return ss_.str(); }
 
         chunk_id id() const { return output_id_; }
-
-        void set_output_filename(const std::string& value)
-        {
-                output_.filename(value);
-        }
 
         void release()
         {
@@ -262,12 +279,20 @@ private:
                                 std::push_heap(heap.begin(), heap.end());
                         }
                         else
+                        {
+                                heap.back().is->release();
                                 heap.pop_back();
+                        }
                         
 
                         if (heap.size() == 1)
                         {
-                                copy_to_output(*heap.back().is);
+                                output_.put(heap.back().value);
+
+                                if(heap.back().is->next())
+                                        copy_to_output(*heap.back().is);
+
+                                heap.back().is->release();
                                 heap.pop_back();
                         }
                 }

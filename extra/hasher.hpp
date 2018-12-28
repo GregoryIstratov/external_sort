@@ -120,6 +120,15 @@ public:
                 );
         }
 
+        void put(const void* data, std::size_t size)
+        {
+                hash_ = crc64(
+                        hash_,
+                        reinterpret_cast<const uint8_t*>(data),
+                        size
+                );
+        }
+
         auto hash() const { return hash_value<8>(hash_); }
 private:
         uint64_t hash_ = 0;

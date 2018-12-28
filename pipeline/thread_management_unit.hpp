@@ -61,7 +61,7 @@ public:
                 }
 
                 if (any_failed)
-                        THROW_EXCEPTION("Something went wrong");
+                        THROW_EXCEPTION << "Something went wrong";
         }
 
         uint32_t active_threads() const { return active_threads_; }
@@ -111,27 +111,29 @@ public:
                         auto& bar = found->second;
                         lk.unlock();
 
-                        bar.wait();
+                        bar->wait();
                 }
                 else
                 {
-                        auto res = bar_map_.emplace(id, threads_n_);
+
+                        std::unique_ptr<barrier> new_bar(new barrier(threads_n_));
+                        auto res = bar_map_.emplace(id, std::move(new_bar));
 
                         if (!res.second)
-                                THROW_EXCEPTION("Failed to insert to hash map");
+                                THROW_EXCEPTION << "Failed to insert to hash map";
 
                         auto& bar = res.first->second;
                         lk.unlock();
 
-                        bar.wait();
+                        bar->wait();
                 }
         }
 private:
         uint32_t threads_n_;
         std::mutex mtx_;
-        std::atomic_uint32_t active_threads_;
+        std::atomic<uint32_t> active_threads_;
 
         std::unordered_map<uint32_t, std::condition_variable> cv_map_;
-        std::unordered_map<uint32_t, barrier> bar_map_;
+        std::unordered_map<uint32_t, std::unique_ptr<barrier>> bar_map_;
         spinlock spin_;
 };

@@ -40,7 +40,7 @@
 #include <cstdio>
 #include "crc64.hpp"
 #include "../config.hpp"
-#include "../tools/file.hpp"
+#include "../tools/mapped_file.hpp"
 
 static const uint64_t crc64_tab[256] = {
         UINT64_C(0x0000000000000000), UINT64_C(0x7ad870c830358979),
@@ -185,17 +185,14 @@ uint64_t crc64(uint64_t crc, const uint8_t* data, uint64_t size)
 
 uint64_t crc64_from_file(const char* filename)
 {
-        char buff[PAGE_SIZE];
         uint64_t crc = 0;
 
-        raw_file_reader fr(filename);
+        auto file = mapped_file::create();
+        file->open(filename, std::ios::in);
 
-        while (!fr.eof())
-        {
-                auto size = fr.read(buff, PAGE_SIZE);
-                
-                crc = crc64(crc, reinterpret_cast<uint8_t*>(buff), size);
-        }
+        auto range = file->range();
+        
+        crc = crc64(crc, reinterpret_cast<uint8_t*>(range->data()), range->size());
 
         return crc;
 }

@@ -2,6 +2,9 @@
 
 #include "file.hpp"
 #include "exception.hpp"
+#include "../log.hpp"
+#include "raw_file.hpp"
+#include "mapped_file.hpp"
 
 #if defined(_WINDOWS)
 
@@ -83,10 +86,10 @@ void iterate_dir(const char* path, std::function<void(const char*)>&& callback)
         }
         else
         {
-                THROW_EXCEPTION("Failed to read directory '"
+                THROW_EXCEPTION << "Failed to read directory '"
                         << path
                         << "': "
-                        << win_error_string()(GetLastError()));
+                        << win_error_string()(GetLastError());
         }
 }
 
@@ -101,7 +104,7 @@ bool check_dir_exist(const char* path)
 void create_directory(const char* name)
 {
         if (!CreateDirectoryA(name, nullptr))
-                THROW_EXCEPTION(win_error_string()(GetLastError()));
+                THROW_EXCEPTION << win_error_string()(GetLastError()));
 }
 
 #else
@@ -137,10 +140,10 @@ void iterate_dir(const char* path, std::function<void(const char*)>&& callback)
         dir_guard guard(dir);
 
         if(!dir)
-                THROW_EXCEPTION("Failed to open directory '"
+                THROW_EXCEPTION << "Failed to open directory '"
                                         << path
                                         << "': "
-                                        << strerror(errno));
+                                        << put_errno;
 
 
         while((ent = readdir(dir)))
@@ -167,8 +170,8 @@ bool check_dir_exist(const char* path)
         }
         else
         {
-                THROW_EXCEPTION("Error in checking die existance: "
-                                << strerror(errno));
+                THROW_EXCEPTION << "Error in checking die existance: "
+                                << put_errno;
         }
 }
 
@@ -182,17 +185,25 @@ void create_directory(const char* path)
 #endif
 
         if(ret != 0)
-                THROW_EXCEPTION("Failed to create directory '"
-                                << path << "': " << strerror(errno));
+                THROW_EXCEPTION << "Failed to create directory '"
+                                << path << "': " << put_errno;
 }
 
 #endif // defined
 
 void _file_write(std::string&& filename, const void* data, size_t size)
 {
-        raw_file_writer f(std::move(filename));
+        //raw_file_writer f(std::move(filename));
 
-        f.write(data, size);
+        //f.write(data, size);
+
+        auto f = mapped_file::create();
+        f->open(filename.c_str(), size, std::ios::out | std::ios::trunc);
+
+        auto r = f->range();
+        r->lock();
+
+        mem_copy(r->data(), data, r->size());
 }
 
 std::vector<unsigned char> _file_read_all(std::string&& filename)
@@ -261,8 +272,8 @@ public:
                 source_.open(filename);
 
                 if (!source_)
-                        THROW_EXCEPTION("Cannot open file '"
-                                << filename << "' for mapping");
+                        THROW_EXCEPTION << "Cannot open file '"
+                                << filename << "' for mapping";
         }
 
         void close() override
@@ -301,8 +312,8 @@ public:
 
                 sink_.open(params);
                 if (!sink_)
-                        THROW_EXCEPTION("Can't open file '" << filename 
-                                        << "' for mapping");
+                        THROW_EXCEPTION << "Can't open file '" << filename 
+                                        << "' for mapping";
         }
 
         void close() override
@@ -357,23 +368,23 @@ public:
 
         void open(const char* filename) override
         {
+                debug() << "[posix_mmap_file_source]: open '" << filename << "'";
+
                 auto fd = ::open(filename, O_RDONLY);
                 if (fd == -1)
-                        THROW_EXCEPTION("Cannot open file '" << filename
-                                << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "Cannot open the file";
 
                 struct stat sb;
                 if (fstat(fd, &sb) == -1)
-                        THROW_EXCEPTION("Cannot get file '" << filename
-                                << "' stat: " << strerror(errno));
+                        THROW_EXCEPTION << "Cannot get file '" << filename
+                                << "' stat: " << put_errno;
 
                 size_ = sb.st_size;
 
-                ptr_ = mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd, 0);
+                ptr_ = mmap(nullptr, size_, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fd, 0);
 
                 if (ptr_ == MAP_FAILED)
-                        THROW_EXCEPTION("mmap file '" << filename
-                                << "' failed: " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "mmap failed";
         }
 
         size_t size() const override
@@ -424,8 +435,7 @@ public:
                 fd_ = ::open(filename, O_RDWR | O_CREAT | O_TRUNC, (mode_t)0600);
 
                 if (fd_ == -1)
-                        THROW_EXCEPTION("Cannot open file '" << filename
-                                << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "Cannot open the file";
 
                 /* Something needs to be written at the end of the file to
                 * have the file actually have the new size.
@@ -439,19 +449,16 @@ public:
                 */
 
                 if (lseek(fd_, size - 1, SEEK_SET) == -1)
-                        THROW_EXCEPTION("Cannot seek file '" << filename 
-                                        << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "Cannot seek the file";
 
                 if (write(fd_, "", 1) == -1)
-                        THROW_EXCEPTION("Cannot write to file '" << filename 
-                                        << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "Cannot write the file";
 
                 ptr_ = mmap(nullptr, size_, PROT_READ | PROT_WRITE, MAP_SHARED,
                             fd_, 0);
 
                 if (ptr_ == MAP_FAILED)
-                        THROW_EXCEPTION("Cannot map file '" << filename
-                                << "': " << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "Cannot map the file";
         }
 
         void close() override
@@ -532,3 +539,6 @@ std::unique_ptr<memory_mapped_file_sink> memory_mapped_file_sink::create()
 {
         return mmap_sink_factory<mmap_sink_type>()();
 }
+
+
+

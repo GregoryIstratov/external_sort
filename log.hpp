@@ -110,9 +110,7 @@ public:
                 fos_.open(filename, std::ios::out | std::ios::app);
 
                 if (!fos_)
-                        THROW_EXCEPTION("Cannot open the file '" 
-                                        << filename << "': " 
-                                        << strerror(errno));
+                        THROW_FILE_EXCEPTION(filename) << "Cannot seek the file";
         }
 
 
