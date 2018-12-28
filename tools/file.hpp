@@ -12,7 +12,6 @@
 #include "literals.hpp"
 #include <fstream>
 #include "../config.hpp"
-#include "data_device.hpp"
 
 void delete_file(const char* filename);
 
